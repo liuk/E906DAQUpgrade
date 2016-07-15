@@ -242,7 +242,7 @@ void ConfigureDPRam()
                                   AT91C_SMC_WRITEMODE  |
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
                                   ((0x1 << 16) & AT91C_SMC_TDF)  |
-                                  AT91C_SMC_PS_SIZE_THIRTY_TWO_BYTES);
+                                  AT91C_SMC_DBW_WIDTH_THIRTY_TWO_BITS);
 }
 
 
