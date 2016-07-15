@@ -1,0 +1,5 @@
+# build object file
+*.o
+
+# build directory
+ARM/TWTDCEmbedded/at91sam9260_sdram
