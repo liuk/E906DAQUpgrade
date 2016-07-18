@@ -37,6 +37,30 @@ unsigned char pLedStates[2] = {1, 1};
 /// Global timestamp in milliseconds since start of application.
 volatile unsigned int timestamp = 0;
 
+typedef unsigned short* sPTR;
+typedef unsigned long*  lPTR;    // int and long on ARM are both 32-bit, learnt sth new
+
+//------------------------------------------------------------------------------
+/// Simple function to read 32Kx32 bits from address 0x50000000
+//------------------------------------------------------------------------------
+void DPRead(void)
+{
+    unsigned int i;
+    unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
+    lPTR i_dpaddr = (lPTR)0x50000000;
+    for(i = nWords; i != 0; i--) 
+    {
+        // readout the data and check consistency
+        unsigned int readout = *i_dpaddr;
+        if(i % 1000 == 0)
+        {
+            printf(" -- %d DPRam address %08X: %08X \n\r", nWords - i, i_dpaddr, readout);
+        }
+        
+        //increment addr pointers by 4 bytes
+        ++i_dpaddr;
+    }
+}
 
 //------------------------------------------------------------------------------
 /// Handler for PIT interrupt. Increments the timestamp counter.
@@ -91,9 +115,8 @@ void ISR_Bp1(void)
         {
             lastPress = timestamp;
 
-            // Toggle LED state
-            pLedStates[0] = !pLedStates[0];
-            if(!pLedStates[0]) LED_Clear(0);
+            printf("Instructed to read DP by push button 1:\n\r");
+            DPRead();
         }
     }
 }
@@ -219,14 +242,30 @@ void Wait(unsigned long delay)
 
 // Don't know if it's necessary, but apparently every pin definition is defined 
 // outside as a global const, just follow the convention here
-const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};
-const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};
+const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 4
+const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 5 -- semaphore mode
+const Pin pinInt = {1 << 13, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port interrupt
+const Pin pinBsy = {1 << 15, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port busy -- should not be needed
 
+// Interrupt handler for DP - read and display everything
+void ISR_DPInt()
+{
+	//Acknowledge the DP interrupt
+	unsigned char dp_isr = PIO_GetISR(&pinInt);
+
+    printf("Instructed to read DP by PC13\n\r");
+    DPRead();
+
+
+}
+
+// Configures the Dual-port RAM on CompactFlash controller -- this is done be TEK
 void ConfigureDPRam()
 {
     // Configure PIO pins for DP control
     PIO_Configure(&pinCE4, 1);
     PIO_Configure(&pinCE5, 1);
+    PIO_Configure(&pinInt, 1);
 
     // For detailed explaination of each setting bits, refer to datasheet 19.14.1 - 19.14.4
     // Note SMC_CTRL corresponds to SMC Mode Register
@@ -243,17 +282,16 @@ void ConfigureDPRam()
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
                                   ((0x1 << 16) & AT91C_SMC_TDF)  |
                                   AT91C_SMC_DBW_WIDTH_THIRTY_TWO_BITS);
-}
 
+    // Configure interrupt -- one alternative way might be through AIC using AT91C_ID_FIQ
+    PIO_ConfigureIt(&pinInt, (void (*)(const Pin *)) ISR_DPInt);
+    PIO_EnableIt(&pinInt);
+}
 
 
 //------------------------------------------------------------------------------
 /// Application entry point. 
 //------------------------------------------------------------------------------
-
-typedef unsigned short* sPTR;
-typedef unsigned long*  lPTR;    // int and long on ARM are both 32-bit, learnt sth new
-
 int main(void)
 {
     // DBGU output configuration
@@ -305,6 +343,7 @@ int main(void)
         // Toggle LED state if active
         if(pLedStates[0]) LED_Toggle(0);
 
+        /*
         // Read from DP, increment by 1 and write to SDRAM
         printf("Reading from DP and writing to SDRAM \n\r");
         lPTR fAddr = dpAddr;
@@ -333,7 +372,7 @@ int main(void)
             	printf(" -- %d DP: %08X = %08X, SD: %08X = %08X \n\r", nWords - i, tAddr, *tAddr, fAddr, *fAddr);
             }
             ++fAddr; ++tAddr;
-        }
+        }*/
 
         // Wait for 10s
         printf("One cycle finished. \n\r");
