@@ -303,7 +303,7 @@ int main(void)
     // Configuration
     ConfigurePit();
     ConfigureTc();
-    ConfigureButtons();
+    ConfigureButtons();   //note all the PIO intl has been initialized in this call
     ConfigureLeds();
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
