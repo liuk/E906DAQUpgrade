@@ -62,6 +62,22 @@ void DPRead(void)
     }
 }
 
+void DPWrite(void)
+{
+    unsigned int i;
+    unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
+    lPTR i_dpaddr = (lPTR)0x50000000;
+    for(i = nWords; i != 0; i--) 
+    {
+        // write dummy data
+        unsigned int data = 0xDEAD0000 + nWords - i;
+        *i_dpaddr = data;
+        
+        //increment addr pointers by 4 bytes
+        ++i_dpaddr;
+    }
+}
+
 //------------------------------------------------------------------------------
 /// Handler for PIT interrupt. Increments the timestamp counter.
 //------------------------------------------------------------------------------
@@ -137,19 +153,8 @@ void ISR_Bp2(void)
         {
             lastPress = timestamp;
 
-            // Disable LED#2 and TC0 if there were enabled
-            if(pLedStates[1])
-            {
-                pLedStates[1] = 0;
-                LED_Clear(1);
-                AT91C_BASE_TC0->TC_CCR = AT91C_TC_CLKDIS; 
-            }   
-            else    // Enable LED#2 and TC0 if there were disabled 
-            {             
-                pLedStates[1] = 1;
-                LED_Set(1);
-                AT91C_BASE_TC0->TC_CCR = AT91C_TC_CLKEN | AT91C_TC_SWTRG;
-            }
+            printf("Instructed to write DP by push button 2:\n\r");
+            DPWrite();
         }
     }
 }
@@ -244,19 +249,17 @@ void Wait(unsigned long delay)
 // outside as a global const, just follow the convention here
 const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 4
 const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 5 -- semaphore mode
-const Pin pinInt = {1 << 13, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port interrupt
-const Pin pinBsy = {1 << 15, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port busy -- should not be needed
+const Pin pinInt = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};   //Dual-port interrupt
+//const Pin pinBsy = {1 << 15, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port busy -- should not be needed
 
 // Interrupt handler for DP - read and display everything
 void ISR_DPInt()
 {
-	//Acknowledge the DP interrupt
-	unsigned char dp_isr = PIO_GetISR(&pinInt);
+    //Acknowledge the DP interrupt
+    unsigned int dp_isr = PIO_GetISR(&pinInt);
 
-    printf("Instructed to read DP by PC13\n\r");
-    DPRead();
-
-
+    printf("Instructed to read DP by PC11\n\r");
+    if(dp_isr != 0) DPRead();
 }
 
 // Configures the Dual-port RAM on CompactFlash controller -- this is done be TEK
@@ -265,7 +268,6 @@ void ConfigureDPRam()
     // Configure PIO pins for DP control
     PIO_Configure(&pinCE4, 1);
     PIO_Configure(&pinCE5, 1);
-    PIO_Configure(&pinInt, 1);
 
     // For detailed explaination of each setting bits, refer to datasheet 19.14.1 - 19.14.4
     // Note SMC_CTRL corresponds to SMC Mode Register
@@ -284,8 +286,15 @@ void ConfigureDPRam()
                                   AT91C_SMC_DBW_WIDTH_THIRTY_TWO_BITS);
 
     // Configure interrupt -- one alternative way might be through AIC using AT91C_ID_FIQ
+    PIO_Configure(&pinInt, 1);
     PIO_ConfigureIt(&pinInt, (void (*)(const Pin *)) ISR_DPInt);
     PIO_EnableIt(&pinInt);
+
+    //AT91C_BASE_PIOC->PIO_PDR = AT91C_PIO_PC11;   //disable PIO on PC13
+    //AT91C_BASE_PIOC->PIO_ASR = AT91C_PIO_PC11;   //enable interrupt on PC13
+    //AIC_DisableIT(AT91C_ID_FIQ);
+    //AIC_ConfigureIT(AT91C_ID_FIQ, 0x0 << 5, ISR_DPInt);   //configure FIQ to be sensitive to low level
+    //AIC_EnableIT(AT91C_ID_FIQ); 
 }
 
 
