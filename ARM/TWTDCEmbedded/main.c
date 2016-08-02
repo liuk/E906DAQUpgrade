@@ -1,9 +1,5 @@
-//------------------------------------------------------------------------------
-//         Headers
-//------------------------------------------------------------------------------
-
 #include <board.h>
-#include <board_memories.h> 
+#include <board_memories.h>
 #include <pio/pio.h>
 #include <pio/pio_it.h>
 #include <pit/pit.h>
@@ -19,8 +15,31 @@
 /// Delay for pushbutton debouncing (in milliseconds).
 #define DEBOUNCE_TIME       500
 
-/// PIT period value in µseconds.
+/// PIT period value in micro - seconds.
 #define PIT_PERIOD          1000
+
+/// Size of DP in bytes -- 32K x 32 bits
+#define DPSIZE              0x20000
+
+/// Size of DP in words -- 32K
+#define NDPWORDS            0x8000
+
+/// Size of SDRAM in bytes -- 64M - 0x10,0000 - 0x8000
+/// First 0x8000 bytes occuppied by user app, i.e. this program
+/// Last 0x100000 bytes occupied by u-boot handling the basics
+#define SDSIZE              0x03ef8000
+
+/// Size of SDRAM in words
+#define NSDWORDS            0x0fbe0000
+
+/// Number of data banks in Dual-port
+#define NBANKS              16
+#define NWORDSPERBANK       0x400     //1K 32-bit words per bank
+#define NBYTESPERBANK       0x1000    //4096 = 32K * 32 / 4
+
+/// Masks to retrive info
+#define NWORDSMASK          0x7ff00000
+#define BANKIDMASK          0x0000000f
 
 //------------------------------------------------------------------------------
 //         Local variables
@@ -37,232 +56,156 @@ unsigned char pLedStates[2] = {1, 1};
 /// Global timestamp in milliseconds since start of application.
 volatile unsigned int timestamp = 0;
 
-typedef unsigned short* sPTR;
+/// Global flag about the current stage of running: 0 = beamOn, 1 = beamOff
+volatile unsigned int stage = 0;
+
+/// Total number of words in this spill
+volatile unsigned int nWordsTotal = 0;
+
+/// Pointer to a long int or unsigned int
 typedef unsigned long*  lPTR;    // int and long on ARM are both 32-bit, learnt sth new
 
+/// Addresses
+// start and end address of DP and SD
+const lPTR dpStartAddr = (lPTR)0x50000000;
+const lPTR dpEndAddr   = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
+const lPTR sdStartAddr = (lPTR)0x20008000;
+const lPTR sdEndAddr   = (lPTR)0x23f00000;
+
+// Address of first and last word of each DP bank
+lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
+lPTR dpBankLastAddr[NBANKS];     // the last word of DP memory bank -- where eventID is saved
+
+// Address of current read address from SD
+lPTR currentSDAddr = 0;//sdStartAddr;
+
 //------------------------------------------------------------------------------
-/// Simple function to read 32Kx32 bits from address 0x50000000
+/// initialize
 //------------------------------------------------------------------------------
-void DPRead(void)
+void init(void)
 {
-    unsigned int i;
-    unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
-    lPTR i_dpaddr = (lPTR)0x50000000;
-    for(i = nWords; i != 0; i--) 
+    //Start/end address of each DP memory bank
+    dpBankStartAddr[0] = dpStartAddr;
+    for(int i = 1; i < NBANKS; ++i)
     {
-        // readout the data and check consistency
-        unsigned int readout = *i_dpaddr;
-        if(i % 1000 == 0)
+        dpBankStartAddr[i] = dpBankStartAddr[i-1] + NWORDSPERBANK;
+        dpBankLastAddr[i] = dpBankStartAddr[i] + NBYTESPERBANK - 2;
+    }
+
+    //set running stage to be ready for beam
+    stage = 0;
+}
+
+//------------------------------------------------------------------------------
+/// transfer from DP to SDRam during beam on time
+//------------------------------------------------------------------------------
+void beamOnTransfer(void)
+{
+    lPTR sdAddr = sdStartAddr;
+    unsigned int currentDPBank = 0;
+    nWordsTotal = 0;
+
+    while(stage == 0)
+    {
+        //Read all the bank headers until the next finished bank
+        unsigned int header = *(dpBankStartAddr[currentDPBank]);
+        while(header == 0)
         {
-            printf(" -- %d DPRam address %08X: %08X \n\r", nWords - i, i_dpaddr, readout);
+            currentDPBank = (currentDPBank + 1) & BANKIDMASK;
+            header = *(dpBankStartAddr[currentDPBank]);
+            //printf("Looking at bank %d with header = %d\n\r", currentDPBank, header);
         }
-        
-        //increment addr pointers by 4 bytes
-        ++i_dpaddr;
-    }
-}
 
-void DPWrite(void)
-{
-    unsigned int i;
-    unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
-    lPTR i_dpaddr = (lPTR)0x50000000;
-    for(i = nWords; i != 0; i--) 
-    {
-        // write dummy data
-        unsigned int data = 0xDEAD0000 + nWords - i;
-        *i_dpaddr = data;
-        
-        //increment addr pointers by 4 bytes
-        ++i_dpaddr;
-    }
-}
+        //extract nWords from header
+        lPTR dpAddr = dpBankStartAddr[currentDPBank] + 1;
+        unsigned int nWords = (header & NWORDSMASK) >> 20;
+        //if(nWords > NWORDSPERBANK)        TRACE_ERROR("Number of words in event %d exceeded bank size.", eventID);
+        //if(sdAddr + nWords*4 > sdEndAddr) TRACE_ERROR("SDRAM overflow.");
 
-//------------------------------------------------------------------------------
-/// Handler for PIT interrupt. Increments the timestamp counter.
-//------------------------------------------------------------------------------
-void ISR_Pit(void)
-{
-    unsigned int status;
+        printf("This bank has %d words\n\r", nWords);
 
-    // Read the PIT status register
-    status = PIT_GetStatus() & AT91C_PITC_PITS;
-    if(status != 0) // 1 indicates the Periodic Interval timer reached PIV since the last read of PIT_PIVR
-    {
-        // Read the PIVR to acknowledge interrupt and get number of ticks
-        // Returns the number of occurrences of periodic intervals since the last read of PIT_PIVR
-        // Right shift by 20 bits to get milliseconds
-        timestamp += (PIT_GetPIVR() >> 20);
-    }
-}
+        //extract eventID info
+        unsigned int eventID = *(dpBankLastAddr[currentDPBank]);
+        //unsigned int bankID = eventID & BANKIDMASK;
+        //if(bankID != currentDPBank)       TRACE_ERROR("BankID does not match on FPGA side.");
 
-//------------------------------------------------------------------------------
-/// Configure the periodic interval timer to generate an interrupt every
-/// millisecond.
-//------------------------------------------------------------------------------
-void ConfigurePit(void)
-{
-    // Initialize the PIT to the desired frequency
-    PIT_Init(PIT_PERIOD, BOARD_MCK / 1000000);
+        //move the header to SDRAM
+        *sdAddr = header;
+        ++sdAddr;
 
-    // Configure interrupt on PIT
-    AIC_DisableIT(AT91C_ID_SYS);
-    AIC_ConfigureIT(AT91C_ID_SYS, AT91C_AIC_PRIOR_LOWEST, ISR_Pit);
-    AIC_EnableIT(AT91C_ID_SYS);
-    PIT_EnableIT();
-
-    // Enable the pit -- seems redundent
-    PIT_Enable();
-}
-
-//------------------------------------------------------------------------------
-/// Interrupt handler for pushbutton #1. Starts or stops LED #1.
-//------------------------------------------------------------------------------
-void ISR_Bp1(void)
-{
-    static unsigned int lastPress = 0;
-
-    // Check if the button has been pressed
-    if(!PIO_Get(&pinPB1)) 
-    {
-        // Simple debounce method: limit push frequency to 1/DEBOUNCE_TIME
-        // (i.e. at least DEBOUNCE_TIME ms between each push)
-        if((timestamp - lastPress) > DEBOUNCE_TIME) 
+        //move the content to SDRAM
+        unsigned int i = nWords;
+        for(; i != 0; --i)
         {
-            lastPress = timestamp;
-
-            printf("Instructed to read DP by push button 1:\n\r");
-            DPRead();
+            *sdAddr = *dpAddr + 1;   // this is for testing only
+            printf(" -- Transfered one word!\n\r");
+            ++sdAddr; ++dpAddr;
         }
+
+        //move the eventID word to SDRAM
+        *sdAddr = eventID;
+        ++sdAddr;
+
+        printf("Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
+        unsigned int n = sdAddr - sdStartAddr;
+        for(i = 0; i < n; ++i) printf(" --- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
+
+        //Reset the event header and move to next bank
+        *(dpBankStartAddr[currentDPBank]) = 0;
+        currentDPBank = (currentDPBank + 1) & BANKIDMASK;
     }
+
+    nWordsTotal = sdAddr - sdStartAddr;  //Total number of words
 }
 
 //------------------------------------------------------------------------------
-/// Interrupt handler for pushbutton #2. Starts or stops LED #2 and TC0.
+/// transfer from SDRam to DP during beam off time
 //------------------------------------------------------------------------------
-void ISR_Bp2(void)
+const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
+void beamOffTransfer(void)
 {
-    static unsigned int lastPress = 0;
-    
-    // Check if the button has been pressed
-    if(!PIO_Get(&pinPB2)) 
+    //Acknowledge interrupt from PC11
+    unsigned int dp_isr = PIO_GetISR(&pinPC11);
+    if(!dp_isr) return;
+
+    //If it's the first entry in this spill, set stage to 1 to stop beam off reading
+    if(stage == 0)
     {
-        // Simple debounce method: limit push frequency to 1/DEBOUNCE_TIME
-        // (i.e. at least DEBOUNCE_TIME ms between each push)
-        if((timestamp - lastPress) > DEBOUNCE_TIME) 
-        {
-            lastPress = timestamp;
+        stage = 1;
+        //while(nWordsTotal == 0); //wait for the last reading cycle to finish
 
-            printf("Instructed to write DP by push button 2:\n\r");
-            DPWrite();
-        }
+        currentSDAddr = sdStartAddr;  //initialize SD read address
     }
-}
 
-//------------------------------------------------------------------------------
-/// Configures the pushbuttons to generate interrupts when pressed.
-//------------------------------------------------------------------------------
-void ConfigureButtons(void)
-{
-    // Configure pios
-    PIO_Configure(&pinPB1, 1);
-    PIO_Configure(&pinPB2, 1);
+    //Write as much data as possible to the DP memory, save the last word for word count
+    unsigned int nWords = NDPWORDS - 1;
+    if(nWords > nWordsTotal) nWords = nWordsTotal;
 
-    // Initialize interrupts
-    PIO_InitializeInterrupts(AT91C_AIC_PRIOR_LOWEST);
-    PIO_ConfigureIt(&pinPB1, (void (*)(const Pin *)) ISR_Bp1);
-    PIO_ConfigureIt(&pinPB2, (void (*)(const Pin *)) ISR_Bp2);
-    PIO_EnableIt(&pinPB1);
-    PIO_EnableIt(&pinPB2);
-}
-
-//------------------------------------------------------------------------------
-/// Configures LEDs #1 and #2 (cleared by default).
-//------------------------------------------------------------------------------
-void ConfigureLeds(void)
-{
-    LED_Configure(0);
-    LED_Configure(1);
-}
-
-//------------------------------------------------------------------------------
-/// Interrupt handler for TC0 interrupt. Toggles the state of LED #2.
-//------------------------------------------------------------------------------
-void ISR_Tc0(void)
-{
-    volatile unsigned int dummy;
-
-    // Clear status bit to acknowledge interrupt
-    dummy = AT91C_BASE_TC0->TC_SR;
-
-    // Toggle LED state
-    LED_Toggle(1);
-}
-
-//------------------------------------------------------------------------------
-/// Configure Timer Counter 0 to generate an interrupt every 250ms.
-//------------------------------------------------------------------------------
-void ConfigureTc(void)
-{
-    unsigned int div;
-    unsigned int tcclks;
-
-    // Enable peripheral clock
-    AT91C_BASE_PMC->PMC_PCER = 1 << AT91C_ID_TC0;
-
-    // Configure TC for a 4Hz frequency and trigger on RC compare
-    TC_FindMckDivisor(4, BOARD_MCK, &div, &tcclks);
-    TC_Configure(AT91C_BASE_TC0, tcclks | AT91C_TC_CPCTRG);
-    AT91C_BASE_TC0->TC_RC = (BOARD_MCK / div) / 4; // timerFreq / desiredFreq
-
-    // Configure and enable interrupt on RC compare
-    AIC_ConfigureIT(AT91C_ID_TC0, AT91C_AIC_PRIOR_LOWEST, ISR_Tc0);
-    AT91C_BASE_TC0->TC_IER = AT91C_TC_CPCS;
-    AIC_EnableIT(AT91C_ID_TC0);
-
-    // Start the counter if LED is enabled.
-    if(pLedStates[1]) TC_Start(AT91C_BASE_TC0);
-}
-
-//------------------------------------------------------------------------------
-/// Waits for the given number of milliseconds (using the timestamp generated
-/// by the PIT).
-/// \param delay  Delay to wait for, in milliseconds.
-//------------------------------------------------------------------------------
-void Wait(unsigned long delay)
-{
-    volatile unsigned int start = timestamp;
-    unsigned int elapsed;
-    do 
+    //Transfer nWords words from SD to DP
+    unsigned int i = nWords;
+    lPTR dpAddr= dpStartAddr;
+    for(; i != 0; --i)
     {
-        elapsed = timestamp;
-        elapsed -= start;
+        *dpAddr = *currentSDAddr;
+        ++dpAddr; ++currentSDAddr;
     }
-    while(elapsed < delay);
+
+    //Write nWords to the last word at DP, as interrupt
+    *(dpEndAddr - 1) = nWords;
+
+    //Subtract the nWords from nWordsTotal, and reset running stage to 0
+    nWordsTotal = nWordsTotal - nWords;
+    if(nWordsTotal == 0) stage = 0;
 }
 
 //------------------------------------------------------------------------------
 //         Utility functions to initialize Dualport SRAM -- mostly by Terry
 //------------------------------------------------------------------------------
-
-// Don't know if it's necessary, but apparently every pin definition is defined 
+// Don't know if it's necessary, but apparently every pin definition is defined
 // outside as a global const, just follow the convention here
 const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 4
 const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 5 -- semaphore mode
-const Pin pinInt = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};   //Dual-port interrupt
-//const Pin pinBsy = {1 << 15, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};   //Dual-port busy -- should not be needed
 
-// Interrupt handler for DP - read and display everything
-void ISR_DPInt()
-{
-    //Acknowledge the DP interrupt
-    unsigned int dp_isr = PIO_GetISR(&pinInt);
-
-    printf("Instructed to read DP by PC11\n\r");
-    if(dp_isr != 0) DPRead();
-}
-
-// Configures the Dual-port RAM on CompactFlash controller -- this is done be TEK
 void ConfigureDPRam()
 {
     // Configure PIO pins for DP control
@@ -271,35 +214,29 @@ void ConfigureDPRam()
 
     // For detailed explaination of each setting bits, refer to datasheet 19.14.1 - 19.14.4
     // Note SMC_CTRL corresponds to SMC Mode Register
-
     // Configure EBI selection
     AT91C_BASE_CCFG->CCFG_EBICSA |= (AT91C_EBI_SUPPLY);
-    
+
     // Configure SMC for CS4
-    AT91C_BASE_SMC->SMC_SETUP4 = 0x00000000;  
+    AT91C_BASE_SMC->SMC_SETUP4 = 0x00000000;
     AT91C_BASE_SMC->SMC_PULSE4 = 0x03020202;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
     AT91C_BASE_SMC->SMC_CYCLE4 = 0x00050002;  // NRDCYCLE=005, NWECYCLE=002
-    AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |              
+    AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |
                                   AT91C_SMC_WRITEMODE  |
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
                                   ((0x1 << 16) & AT91C_SMC_TDF)  |
                                   AT91C_SMC_DBW_WIDTH_THIRTY_TWO_BITS);
 
-    // Configure interrupt -- one alternative way might be through AIC using AT91C_ID_FIQ
-    PIO_Configure(&pinInt, 1);
-    PIO_ConfigureIt(&pinInt, (void (*)(const Pin *)) ISR_DPInt);
-    PIO_EnableIt(&pinInt);
-
-    //AT91C_BASE_PIOC->PIO_PDR = AT91C_PIO_PC11;   //disable PIO on PC13
-    //AT91C_BASE_PIOC->PIO_ASR = AT91C_PIO_PC11;   //enable interrupt on PC13
-    //AIC_DisableIT(AT91C_ID_FIQ);
-    //AIC_ConfigureIT(AT91C_ID_FIQ, 0x0 << 5, ISR_DPInt);   //configure FIQ to be sensitive to low level
-    //AIC_EnableIT(AT91C_ID_FIQ); 
+    // Configure interrupt
+    // Note this is PC11 instead of PC13 as specified on the datasheet
+    PIO_InitializeInterrupts(AT91C_AIC_PRIOR_LOWEST);
+    PIO_Configure(&pinPC11, 1);
+    PIO_ConfigureIt(&pinPC11, (void (*)(const Pin *)) beamOffTransfer);
+    PIO_EnableIt(&pinPC11);
 }
 
-
 //------------------------------------------------------------------------------
-/// Application entry point. 
+/// Application entry point.
 //------------------------------------------------------------------------------
 int main(void)
 {
@@ -310,81 +247,16 @@ int main(void)
     printf("-- Compiled: %s %s --\n\r", __DATE__, __TIME__);
 
     // Configuration
-    ConfigurePit();
-    ConfigureTc();
-    ConfigureButtons();   //note all the PIO intl has been initialized in this call
-    ConfigureLeds();
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
-    
-    // Base addresses of DPRAM and SDRAM
-    lPTR dpAddr = (lPTR)0x50000000;
-    lPTR sdAddr = (lPTR)0x21000000;   //just to be safe so that we don't overwrite u-boot
-    
-    // Initialize DP to a bunch or dummy values
-    printf("Initialize DP to a bunch or dummy values\n\r");
-    unsigned int i;
-    unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
-    lPTR i_dpaddr = dpAddr;
-    for(i = nWords; i != 0; i--) 
-    {
-    	// write with some dummy data
-    	unsigned int data = 0xDEAD0000 + nWords - i;
-        *i_dpaddr = data;
+    init();
 
-        // readout the data and check consistency
-        unsigned int readout = *i_dpaddr;
-        if(i % 1000 == 0)
-        {
-            printf(" -- %d DPRam address %08X: input = %08X, readout = %08X \n\r", nWords - i, i_dpaddr, data, readout);
-        }
-        
-        //increment addr pointers by 4 bytes
-        ++i_dpaddr;
-    }
-    
     // Main loop
-    while(1) 
+    while(1)
     {
-        // Wait for LED to be active
-        while(!pLedStates[0]);
-        
-        // Toggle LED state if active
-        if(pLedStates[0]) LED_Toggle(0);
+        //Enters beam on transfer
+        if(stage == 0) beamOnTransfer();
 
-        /*
-        // Read from DP, increment by 1 and write to SDRAM
-        printf("Reading from DP and writing to SDRAM \n\r");
-        lPTR fAddr = dpAddr;
-        lPTR tAddr = sdAddr;
-        for(i = nWords; i != 0; i--) 
-        {
-            *tAddr = *fAddr + 1;
-
-            if(i % 1000 == 0)
-            {
-            	printf(" -- %d DP: %08X = %08X, SD: %08X = %08X \n\r", nWords - i, fAddr, *fAddr, tAddr, *tAddr);
-            }
-            ++fAddr; ++tAddr;
-        }
-        
-        // Read from SDRAM, increment by 1 and write back to DP
-        printf("Reading from SDRAM and writing to DP\n\r");
-        fAddr = sdAddr;
-        tAddr = dpAddr;
-        for(i = nWords; i != 0; i--) 
-        {
-            *tAddr = *fAddr + 1;
-
-            if(i % 1000 == 0)
-            {
-            	printf(" -- %d DP: %08X = %08X, SD: %08X = %08X \n\r", nWords - i, tAddr, *tAddr, fAddr, *fAddr);
-            }
-            ++fAddr; ++tAddr;
-        }*/
-
-        // Wait for 10s
-        printf("One cycle finished. \n\r");
-        Wait(10000);
+        //when beam off, interrupt mode will take over
     }
 }
