@@ -128,13 +128,13 @@ void beamOnTransfer(void)
         ++sdAddr;
 
         //move the content to SDRAM
-        unsigned int i = nWords;
+        unsigned int i = nWords - 1;
         for(; i != 0; --i)
         {
             *sdAddr = *dpAddr + 1;   // this is for testing only
             ++sdAddr; ++dpAddr;
 
-            TRACE_DEBUG("-- Read one word from DP to SD.");
+            TRACE_DEBUG("-- Read one word from DP to SD.\n\r");
         }
 
         //move the eventID word to SDRAM
@@ -146,9 +146,9 @@ void beamOnTransfer(void)
         currentDPBank = (currentDPBank + 1) & BANKIDMASK;
 
 #if (TRACE_LEVEL >= TRACE_LEVEL_DEBUG)
-        printf("- Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
+        TRACE_DEBUG("- Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
         unsigned int n = sdAddr - sdStartAddr;
-        for(i = 0; i < n; ++i) printf(" -- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
+        for(i = 0; i < n; ++i) TRACE_DEBUG("-- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
 #endif
     }
 
