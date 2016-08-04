@@ -12,12 +12,6 @@
 //------------------------------------------------------------------------------
 //         Local definitions
 //------------------------------------------------------------------------------
-/// Delay for pushbutton debouncing (in milliseconds).
-#define DEBOUNCE_TIME       500
-
-/// PIT period value in micro - seconds.
-#define PIT_PERIOD          1000
-
 /// Size of DP in bytes -- 32K x 32 bits
 #define DPSIZE              0x20000
 
@@ -44,18 +38,6 @@
 //------------------------------------------------------------------------------
 //         Local variables
 //------------------------------------------------------------------------------
-/// Pushbutton #1 pin instance.
-const Pin pinPB1 = PIN_PUSHBUTTON_1;
-
-/// Pushbutton #2 pin instance.
-const Pin pinPB2 = PIN_PUSHBUTTON_2;
-
-/// Indicates the current state (on or off) for each LED.
-unsigned char pLedStates[2] = {1, 1};
-
-/// Global timestamp in milliseconds since start of application.
-volatile unsigned int timestamp = 0;
-
 /// Global flag about the current stage of running: 0 = beamOn, 1 = beamOff
 volatile unsigned int stage = 0;
 
