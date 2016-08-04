@@ -84,16 +84,25 @@ lPTR currentSDAddr = 0;//sdStartAddr;
 //------------------------------------------------------------------------------
 void init(void)
 {
+    TRACE_DEBUG("Entering init function. \n\r");
+
     //Start/end address of each DP memory bank
     dpBankStartAddr[0] = dpStartAddr;
+    *(dpBankStartAddr[0]) = 0;
     for(int i = 1; i < NBANKS; ++i)
     {
         dpBankStartAddr[i] = dpBankStartAddr[i-1] + NWORDSPERBANK;
-        dpBankLastAddr[i] = dpBankStartAddr[i] + NBYTESPERBANK - 2;
+        dpBankLastAddr[i] = dpBankStartAddr[i] + NWORDSPERBANK - 3;
+
+        //clear all the header positions
+        *(dpBankStartAddr[i]) = 0;
     }
 
     //set running stage to be ready for beam
     stage = 0;
+
+    //set the number of words in SDRAM to 0
+    nWordsTotal = 0;
 }
 
 //------------------------------------------------------------------------------
@@ -101,10 +110,14 @@ void init(void)
 //------------------------------------------------------------------------------
 void beamOnTransfer(void)
 {
+    TRACE_DEBUG("Entering beamOnTransfer function. \n\r");
+
+    //Initialize address, stage register, and DP headers
+    init();
+
+    //Start looping indefinitely
     lPTR sdAddr = sdStartAddr;
     unsigned int currentDPBank = 0;
-    nWordsTotal = 0;
-
     while(stage == 0)
     {
         //Read all the bank headers until the next finished bank
@@ -113,7 +126,6 @@ void beamOnTransfer(void)
         {
             currentDPBank = (currentDPBank + 1) & BANKIDMASK;
             header = *(dpBankStartAddr[currentDPBank]);
-            //printf("Looking at bank %d with header = %d\n\r", currentDPBank, header);
         }
 
         //extract nWords from header
@@ -121,11 +133,11 @@ void beamOnTransfer(void)
         unsigned int nWords = (header & NWORDSMASK) >> 20;
         //if(nWords > NWORDSPERBANK)        TRACE_ERROR("Number of words in event %d exceeded bank size.", eventID);
         //if(sdAddr + nWords*4 > sdEndAddr) TRACE_ERROR("SDRAM overflow.");
-
-        printf("This bank has %d words\n\r", nWords);
+        TRACE_DEBUG("- Bank %d has %d words: \n\r", currentDPBank, nWords);
 
         //extract eventID info
         unsigned int eventID = *(dpBankLastAddr[currentDPBank]);
+        TRACE_DEBUG("- EventID in this bank is: %8X\n\r", eventID);
         //unsigned int bankID = eventID & BANKIDMASK;
         //if(bankID != currentDPBank)       TRACE_ERROR("BankID does not match on FPGA side.");
 
@@ -138,24 +150,28 @@ void beamOnTransfer(void)
         for(; i != 0; --i)
         {
             *sdAddr = *dpAddr + 1;   // this is for testing only
-            printf(" -- Transfered one word!\n\r");
             ++sdAddr; ++dpAddr;
+
+            TRACE_DEBUG("-- Read one word from DP to SD.");
         }
 
         //move the eventID word to SDRAM
         *sdAddr = eventID;
         ++sdAddr;
 
-        printf("Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
-        unsigned int n = sdAddr - sdStartAddr;
-        for(i = 0; i < n; ++i) printf(" --- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
-
         //Reset the event header and move to next bank
         *(dpBankStartAddr[currentDPBank]) = 0;
         currentDPBank = (currentDPBank + 1) & BANKIDMASK;
+
+#if (TRACE_LEVEL >= TRACE_LEVEL_DEBUG)
+        printf("- Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
+        unsigned int n = sdAddr - sdStartAddr;
+        for(i = 0; i < n; ++i) printf(" -- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
+#endif
     }
 
     nWordsTotal = sdAddr - sdStartAddr;  //Total number of words
+    TRACE_DEBUG("Exiting beamOnTransfer, stage = %d", stage);
 }
 
 //------------------------------------------------------------------------------
@@ -164,38 +180,48 @@ void beamOnTransfer(void)
 const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
 void beamOffTransfer(void)
 {
+    TRACE_DEBUG("Entering beamOffTransfer function, stage = %d\n\r", stage);
+
     //Acknowledge interrupt from PC11
     unsigned int dp_isr = PIO_GetISR(&pinPC11);
+    TRACE_DEBUG("- Receive and Acknowledge the interrupt %d.", dp_isr);
     if(!dp_isr) return;
 
     //If it's the first entry in this spill, set stage to 1 to stop beam off reading
     if(stage == 0)
     {
-        stage = 1;
-        //while(nWordsTotal == 0); //wait for the last reading cycle to finish
+        TRACE_DEBUG("- First time entering beamOffTransfer in this spill, stage = %d, set it to 1\n\r", stage);
 
+        stage = 1;
         currentSDAddr = sdStartAddr;  //initialize SD read address
     }
+    TRACE_DEBUG("- Currently the SD RD pointer is at %08X", currentSDAddr);
 
     //Write as much data as possible to the DP memory, save the last word for word count
     unsigned int nWords = NDPWORDS - 1;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
+    TRACE_DEBUG("- Currently SDRAM has %d words, will transfer %d words from to DPRAM.\n\r");
+
+    //Write nWords to the first word at DP
+    lPTR dpAddr = dpStartAddr;
+    *dpAddr = nWords; ++dpAddr;
 
     //Transfer nWords words from SD to DP
     unsigned int i = nWords;
-    lPTR dpAddr= dpStartAddr;
     for(; i != 0; --i)
     {
         *dpAddr = *currentSDAddr;
         ++dpAddr; ++currentSDAddr;
-    }
 
-    //Write nWords to the last word at DP, as interrupt
-    *(dpEndAddr - 1) = nWords;
+        TRACE_DEBUG("-- Read one word from SD to DP\n\r");
+    }
 
     //Subtract the nWords from nWordsTotal, and reset running stage to 0
     nWordsTotal = nWordsTotal - nWords;
     if(nWordsTotal == 0) stage = 0;
+
+    TRACE_DEBUG("- %d words left in SDRAM, stage code is set to %d\n\r", nWordsTotal, stage);
+    TRACE_DEBUG("Leaving beamOffTransfer\n\r");
 }
 
 //------------------------------------------------------------------------------
@@ -211,6 +237,7 @@ void ConfigureDPRam()
     // Configure PIO pins for DP control
     PIO_Configure(&pinCE4, 1);
     PIO_Configure(&pinCE5, 1);
+    PIO_Configure(&pinPC11, 1);  // Note this is PC11 instead of PC13 as specified on the datasheet
 
     // For detailed explaination of each setting bits, refer to datasheet 19.14.1 - 19.14.4
     // Note SMC_CTRL corresponds to SMC Mode Register
@@ -228,9 +255,7 @@ void ConfigureDPRam()
                                   AT91C_SMC_DBW_WIDTH_THIRTY_TWO_BITS);
 
     // Configure interrupt
-    // Note this is PC11 instead of PC13 as specified on the datasheet
     PIO_InitializeInterrupts(AT91C_AIC_PRIOR_LOWEST);
-    PIO_Configure(&pinPC11, 1);
     PIO_ConfigureIt(&pinPC11, (void (*)(const Pin *)) beamOffTransfer);
     PIO_EnableIt(&pinPC11);
 }
@@ -242,16 +267,16 @@ int main(void)
 {
     // DBGU output configuration
     TRACE_CONFIGURE(DBGU_STANDARD, 115200, BOARD_MCK);
-    printf("-- SeaQuest VME TDC Embedded Project %s --\n\r", SOFTPACK_VERSION);
-    printf("-- %s\n\r", BOARD_NAME);
-    printf("-- Compiled: %s %s --\n\r", __DATE__, __TIME__);
+    TRACE_INFO("-- SeaQuest VME TDC Embedded Project %s --\n\r", SOFTPACK_VERSION);
+    TRACE_INFO("-- %s\n\r", BOARD_NAME);
+    TRACE_INFO("-- Compiled: %s %s --\n\r", __DATE__, __TIME__);
 
     // Configuration
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
-    init();
 
     // Main loop
+    stage = 0;
     while(1)
     {
         //Enters beam on transfer
