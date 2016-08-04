@@ -3,7 +3,7 @@
 //------------------------------------------------------------------------------
 
 #include <board.h>
-#include <board_memories.h> 
+#include <board_memories.h>
 #include <pio/pio.h>
 #include <pio/pio_it.h>
 #include <pit/pit.h>
@@ -19,7 +19,7 @@
 /// Delay for pushbutton debouncing (in milliseconds).
 #define DEBOUNCE_TIME       500
 
-/// PIT period value in µseconds.
+/// PIT period value in ï¿½seconds.
 #define PIT_PERIOD          1000
 
 //------------------------------------------------------------------------------
@@ -48,7 +48,7 @@ void DPRead(void)
     unsigned int i;
     unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
     lPTR i_dpaddr = (lPTR)0x50000000;
-    for(i = nWords; i != 0; i--) 
+    for(i = nWords; i != 0; i--)
     {
         // readout the data and check consistency
         unsigned int readout = *i_dpaddr;
@@ -56,7 +56,7 @@ void DPRead(void)
         {
             printf(" -- %d DPRam address %08X: %08X \n\r", nWords - i, i_dpaddr, readout);
         }
-        
+
         //increment addr pointers by 4 bytes
         ++i_dpaddr;
     }
@@ -67,12 +67,12 @@ void DPWrite(void)
     unsigned int i;
     unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
     lPTR i_dpaddr = (lPTR)0x50000000;
-    for(i = nWords; i != 0; i--) 
+    for(i = nWords; i != 0; i--)
     {
         // write dummy data
         unsigned int data = 0xDEAD0000 + nWords - i;
         *i_dpaddr = data;
-        
+
         //increment addr pointers by 4 bytes
         ++i_dpaddr;
     }
@@ -123,11 +123,11 @@ void ISR_Bp1(void)
     static unsigned int lastPress = 0;
 
     // Check if the button has been pressed
-    if(!PIO_Get(&pinPB1)) 
+    if(!PIO_Get(&pinPB1))
     {
         // Simple debounce method: limit push frequency to 1/DEBOUNCE_TIME
         // (i.e. at least DEBOUNCE_TIME ms between each push)
-        if((timestamp - lastPress) > DEBOUNCE_TIME) 
+        if((timestamp - lastPress) > DEBOUNCE_TIME)
         {
             lastPress = timestamp;
 
@@ -143,13 +143,13 @@ void ISR_Bp1(void)
 void ISR_Bp2(void)
 {
     static unsigned int lastPress = 0;
-    
+
     // Check if the button has been pressed
-    if(!PIO_Get(&pinPB2)) 
+    if(!PIO_Get(&pinPB2))
     {
         // Simple debounce method: limit push frequency to 1/DEBOUNCE_TIME
         // (i.e. at least DEBOUNCE_TIME ms between each push)
-        if((timestamp - lastPress) > DEBOUNCE_TIME) 
+        if((timestamp - lastPress) > DEBOUNCE_TIME)
         {
             lastPress = timestamp;
 
@@ -233,7 +233,7 @@ void Wait(unsigned long delay)
 {
     volatile unsigned int start = timestamp;
     unsigned int elapsed;
-    do 
+    do
     {
         elapsed = timestamp;
         elapsed -= start;
@@ -245,7 +245,7 @@ void Wait(unsigned long delay)
 //         Utility functions to initialize Dualport SRAM -- mostly by Terry
 //------------------------------------------------------------------------------
 
-// Don't know if it's necessary, but apparently every pin definition is defined 
+// Don't know if it's necessary, but apparently every pin definition is defined
 // outside as a global const, just follow the convention here
 const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 4
 const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 5 -- semaphore mode
@@ -257,8 +257,10 @@ void ISR_DPInt()
 {
     //Acknowledge the DP interrupt
     unsigned int dp_isr = PIO_GetISR(&pinInt);
+    unsigned int level =  PIO_Get(&pinInt);
+    if(level == 1) return;
 
-    printf("Instructed to read DP by PC11\n\r");
+    printf("Instructed to read DP by PC11 %d\n\r", level);
     if(dp_isr != 0) DPRead();
 }
 
@@ -274,12 +276,12 @@ void ConfigureDPRam()
 
     // Configure EBI selection
     AT91C_BASE_CCFG->CCFG_EBICSA |= (AT91C_EBI_SUPPLY);
-    
+
     // Configure SMC for CS4
-    AT91C_BASE_SMC->SMC_SETUP4 = 0x00000000;  
+    AT91C_BASE_SMC->SMC_SETUP4 = 0x00000000;
     AT91C_BASE_SMC->SMC_PULSE4 = 0x03020202;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
     AT91C_BASE_SMC->SMC_CYCLE4 = 0x00050002;  // NRDCYCLE=005, NWECYCLE=002
-    AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |              
+    AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |
                                   AT91C_SMC_WRITEMODE  |
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
                                   ((0x1 << 16) & AT91C_SMC_TDF)  |
@@ -294,12 +296,12 @@ void ConfigureDPRam()
     //AT91C_BASE_PIOC->PIO_ASR = AT91C_PIO_PC11;   //enable interrupt on PC13
     //AIC_DisableIT(AT91C_ID_FIQ);
     //AIC_ConfigureIT(AT91C_ID_FIQ, 0x0 << 5, ISR_DPInt);   //configure FIQ to be sensitive to low level
-    //AIC_EnableIT(AT91C_ID_FIQ); 
+    //AIC_EnableIT(AT91C_ID_FIQ);
 }
 
 
 //------------------------------------------------------------------------------
-/// Application entry point. 
+/// Application entry point.
 //------------------------------------------------------------------------------
 int main(void)
 {
@@ -316,17 +318,17 @@ int main(void)
     ConfigureLeds();
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
-    
+
     // Base addresses of DPRAM and SDRAM
     lPTR dpAddr = (lPTR)0x50000000;
     lPTR sdAddr = (lPTR)0x21000000;   //just to be safe so that we don't overwrite u-boot
-    
+
     // Initialize DP to a bunch or dummy values
     printf("Initialize DP to a bunch or dummy values\n\r");
     unsigned int i;
     unsigned int nWords = 32*1024;   // DP is 32Kx32 bits
     lPTR i_dpaddr = dpAddr;
-    for(i = nWords; i != 0; i--) 
+    for(i = nWords; i != 0; i--)
     {
     	// write with some dummy data
     	unsigned int data = 0xDEAD0000 + nWords - i;
@@ -338,17 +340,17 @@ int main(void)
         {
             printf(" -- %d DPRam address %08X: input = %08X, readout = %08X \n\r", nWords - i, i_dpaddr, data, readout);
         }
-        
+
         //increment addr pointers by 4 bytes
         ++i_dpaddr;
     }
-    
+
     // Main loop
-    while(1) 
+    while(1)
     {
         // Wait for LED to be active
         while(!pLedStates[0]);
-        
+
         // Toggle LED state if active
         if(pLedStates[0]) LED_Toggle(0);
 
@@ -357,7 +359,7 @@ int main(void)
         printf("Reading from DP and writing to SDRAM \n\r");
         lPTR fAddr = dpAddr;
         lPTR tAddr = sdAddr;
-        for(i = nWords; i != 0; i--) 
+        for(i = nWords; i != 0; i--)
         {
             *tAddr = *fAddr + 1;
 
@@ -367,12 +369,12 @@ int main(void)
             }
             ++fAddr; ++tAddr;
         }
-        
+
         // Read from SDRAM, increment by 1 and write back to DP
         printf("Reading from SDRAM and writing to DP\n\r");
         fAddr = sdAddr;
         tAddr = dpAddr;
-        for(i = nWords; i != 0; i--) 
+        for(i = nWords; i != 0; i--)
         {
             *tAddr = *fAddr + 1;
 
