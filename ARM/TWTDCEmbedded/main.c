@@ -35,11 +35,17 @@
 #define NWORDSMASK          0x7ff00000
 #define BANKIDMASK          0x0000000f
 
+/// System states
+#define BOS                 0x0       //beam is on, keep moving DP to SD
+#define EOS                 0x1       //beam is off, trasnfer from SD to DP
+#define READY               0x2       //transfer is done, ready for next spill
+
 //------------------------------------------------------------------------------
 //         Local variables
 //------------------------------------------------------------------------------
-/// Global flag about the current stage of running: 0 = beamOn, 1 = beamOff
-volatile unsigned int stage = 0;
+/// Global flag about the current state of running: 0 = BOS, 1 = EOS, 2 = Ready for next spill
+/// Note the definition of BOS/EOS/READY is not the same as standard E906 definition
+volatile unsigned int state = BOS;
 
 /// Total number of words in this spill
 volatile unsigned int nWordsTotal = 0;
@@ -51,6 +57,7 @@ typedef unsigned long*  lPTR;    // int and long on ARM are both 32-bit, learnt 
 // start and end address of DP and SD
 const lPTR dpStartAddr = (lPTR)0x50000000;
 const lPTR dpEndAddr   = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
+const lPTR dpIntAddr   = (lPTR)0x5001fff8;
 const lPTR sdStartAddr = (lPTR)0x20008000;
 const lPTR sdEndAddr   = (lPTR)0x23f00000;
 
@@ -59,7 +66,7 @@ lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where 
 lPTR dpBankLastAddr[NBANKS];     // the last word of DP memory bank -- where eventID is saved
 
 // Address of current read address from SD
-lPTR currentSDAddr = 0;//sdStartAddr;
+lPTR currentSDAddr = 0;   //sdStartAddr;
 
 //------------------------------------------------------------------------------
 /// initialize
@@ -80,8 +87,13 @@ void init(void)
         *(dpBankStartAddr[i]) = 0;
     }
 
-    //set running stage to be ready for beam
-    stage = 0;
+    //Read interrupt bit to clear previous interrupt state
+    unsigned int dummy = *dpIntAddr;
+
+    //set running state to be ready for beam
+    state = BOS;
+    LED_Set(0);
+    LED_Clear(1);
 
     //set the number of words in SDRAM to 0
     nWordsTotal = 0;
@@ -94,13 +106,13 @@ void beamOnTransfer(void)
 {
     TRACE_DEBUG("Entering beamOnTransfer function. \n\r");
 
-    //Initialize address, stage register, and DP headers
+    //Initialize address, state register, and DP headers
     init();
 
     //Start looping indefinitely
     lPTR sdAddr = sdStartAddr;
     unsigned int currentDPBank = 0;
-    while(stage == 0)
+    while(state == BOS)
     {
         //Read all the bank headers until the next finished bank
         unsigned int header = *(dpBankStartAddr[currentDPBank]);
@@ -108,6 +120,8 @@ void beamOnTransfer(void)
         {
             currentDPBank = (currentDPBank + 1) & BANKIDMASK;
             header = *(dpBankStartAddr[currentDPBank]);
+
+            if(state != BOS) break;
         }
 
         //extract nWords from header
@@ -133,8 +147,9 @@ void beamOnTransfer(void)
         {
             *sdAddr = *dpAddr + 1;   // this is for testing only
             ++sdAddr; ++dpAddr;
-
+#if (TRACE_LEVEL > TRACE_LEVEL_DEBUG)
             TRACE_DEBUG("-- Read one word from DP to SD.\n\r");
+#endif
         }
 
         //move the eventID word to SDRAM
@@ -145,15 +160,18 @@ void beamOnTransfer(void)
         *(dpBankStartAddr[currentDPBank]) = 0;
         currentDPBank = (currentDPBank + 1) & BANKIDMASK;
 
-#if (TRACE_LEVEL >= TRACE_LEVEL_DEBUG)
-        TRACE_DEBUG("- Stage %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", stage, currentDPBank, eventID, nWords, sdAddr - sdStartAddr);
+        //Update the number of words in SD
+        nWordsTotal = sdAddr - sdStartAddr;  //Total number of words
+
+        TRACE_DEBUG("- State %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", state, currentDPBank, eventID, nWords, nWordsTotal);
+#if (TRACE_LEVEL > TRACE_LEVEL_DEBUG)
         unsigned int n = sdAddr - sdStartAddr;
         for(i = 0; i < n; ++i) TRACE_DEBUG("-- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
 #endif
     }
 
     nWordsTotal = sdAddr - sdStartAddr;  //Total number of words
-    TRACE_DEBUG("Exiting beamOnTransfer, stage = %d", stage);
+    TRACE_DEBUG("Exiting beamOnTransfer, state = %d", state);
 }
 
 //------------------------------------------------------------------------------
@@ -162,27 +180,31 @@ void beamOnTransfer(void)
 const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
 void beamOffTransfer(void)
 {
-    TRACE_DEBUG("Entering beamOffTransfer function, stage = %d\n\r", stage);
+    TRACE_DEBUG("Entering beamOffTransfer function, state = %d\n\r", state);
 
     //Acknowledge interrupt from PC11
     unsigned int dp_isr = PIO_GetISR(&pinPC11);
-    TRACE_DEBUG("- Receive and Acknowledge the interrupt %d.", dp_isr);
-    if(!dp_isr) return;
+    unsigned int dp_lev = PIO_Get(&pinPC11);
+    TRACE_DEBUG("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", dp_isr, dp_lev);
+    if(dp_lev == 1) return;    //only trigger on positive edge
 
-    //If it's the first entry in this spill, set stage to 1 to stop beam off reading
-    if(stage == 0)
+    //If it's the first entry in this spill, set state to 1 to stop beam off reading
+    if(state == BOS)
     {
-        TRACE_DEBUG("- First time entering beamOffTransfer in this spill, stage = %d, set it to 1\n\r", stage);
+        TRACE_DEBUG("- First time entering beamOffTransfer in this spill, state = %d, set it to %d\n\r", state, EOS);
 
-        stage = 1;
+        state = EOS;
+        LED_Clear(0);
+        LED_Set(1);
+
         currentSDAddr = sdStartAddr;  //initialize SD read address
     }
-    TRACE_DEBUG("- Currently the SD RD pointer is at %08X", currentSDAddr);
+    TRACE_DEBUG("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
 
     //Write as much data as possible to the DP memory, save the last word for word count
     unsigned int nWords = NDPWORDS - 1;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
-    TRACE_DEBUG("- Currently SDRAM has %d words, will transfer %d words from to DPRAM.\n\r");
+    TRACE_DEBUG("- Currently SDRAM has %d words, will transfer %d words from to DPRAM.\n\r", nWordsTotal, nWords);
 
     //Write nWords to the first word at DP
     lPTR dpAddr = dpStartAddr;
@@ -195,14 +217,24 @@ void beamOffTransfer(void)
         *dpAddr = *currentSDAddr;
         ++dpAddr; ++currentSDAddr;
 
+#if (TRACE_LEVEL > TRACE_LEVEL_DEBUG)
         TRACE_DEBUG("-- Read one word from SD to DP\n\r");
+#endif
     }
 
-    //Subtract the nWords from nWordsTotal, and reset running stage to 0
+    //Subtract the nWords from nWordsTotal, and reset running state to 0
     nWordsTotal = nWordsTotal - nWords;
-    if(nWordsTotal == 0) stage = 0;
+    if(nWordsTotal == 0)
+    {
+        state = READY;
+        LED_Set(0);
+        LED_Set(1);
+    }
 
-    TRACE_DEBUG("- %d words left in SDRAM, stage code is set to %d\n\r", nWordsTotal, stage);
+    //Clear the interrupt status from DP
+    unsigned int dummy = *dpIntAddr;
+
+    TRACE_DEBUG("- %d words left in SDRAM, state code is set to %d\n\r", nWordsTotal, state);
     TRACE_DEBUG("Leaving beamOffTransfer\n\r");
 }
 
@@ -213,6 +245,18 @@ void beamOffTransfer(void)
 // outside as a global const, just follow the convention here
 const Pin pinCE4 = {1 << 8, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 4
 const Pin pinCE5 = {1 << 9, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_PERIPH_A, PIO_DEFAULT};    //chip select 5 -- semaphore mode
+
+/*
+void ISR_DP(void)
+{
+    //Acknowledge the DP interrupt
+    unsigned int dp_isr = PIO_GetISR(&pinPC11);
+    unsigned int level =  PIO_Get(&pinPC11);
+    //if(level == 1) return;
+
+    printf("Instructed to read DP by PC11 %d\n\r", level);
+    unsigned int dummy = *(dpStartAddr + 0x7ffe);
+}*/
 
 void ConfigureDPRam()
 {
@@ -242,6 +286,12 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 }
 
+void ConfigureLED()
+{
+    LED_Configure(0);
+    LED_Configure(1);
+}
+
 //------------------------------------------------------------------------------
 /// Application entry point.
 //------------------------------------------------------------------------------
@@ -254,15 +304,20 @@ int main(void)
     TRACE_INFO("-- Compiled: %s %s --\n\r", __DATE__, __TIME__);
 
     // Configuration
+    ConfigureLED();
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
 
+    // Set to be ready for beam
+    state = READY;
+    LED_Set(0);
+    LED_Set(1);
+
     // Main loop
-    stage = 0;
     while(1)
     {
         //Enters beam on transfer
-        if(stage == 0) beamOnTransfer();
+        if(state == READY) beamOnTransfer();
 
         //when beam off, interrupt mode will take over
     }
