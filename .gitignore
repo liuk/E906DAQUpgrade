@@ -1,5 +1,13 @@
 # build object file
 *.o
 
+# IAR project files
+*.dep
+*.ewd
+*.ewp
+*.ewt
+*.eww
+ARM/TWTDCEmbedded/settings
+
 # build directory
 ARM/TWTDCEmbedded/at91sam9260_sdram
