@@ -52,43 +52,51 @@ volatile unsigned int state = BOS;
 volatile unsigned int nWordsTotal = 0;
 
 /// Pointer to a long int or unsigned int
-typedef unsigned long*  lPTR;    // int and long on ARM are both 32-bit, learnt sth new
+typedef unsigned long* lPTR;    // int and long on ARM are both 32-bit, learnt sth new
+
+/// interrupt port for dual-port mem
+const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
 
 /// Addresses
 // start and end address of DP and SD
-const lPTR dpStartAddr = (lPTR)0x50000000;
-const lPTR dpEndAddr   = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
-const lPTR dpIntAddr   = (lPTR)0x5001fff8;
-const lPTR sdStartAddr = (lPTR)0x20008000;
-const lPTR sdEndAddr   = (lPTR)0x23f00000;
+const lPTR dpStartAddr  = (lPTR)0x50000000;
+const lPTR dpEndAddr    = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
+const lPTR dpIRQRevAddr = (lPTR)0x5001fff8;
+const lPTR dpIRQSndAddr = (lPTR)0x5001ffff;
+const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x20200000 taking 0x8000 bytes  --- temporary
+const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
 lPTR dpBankLastAddr[NBANKS];     // the last word of DP memory bank -- where eventID is saved
 
 // Address of current read address from SD
-lPTR currentSDAddr = 0;   //sdStartAddr;
+lPTR currentSDAddr = 0;          // sdStartAddr;
 
 //------------------------------------------------------------------------------
 /// initialize
 //------------------------------------------------------------------------------
 void init(void)
 {
-#if defined(BeamOnDBG)
-    TRACE_DEBUG("Entering init function. \n\r");
+#if (BeamOnDBG > 0)
+    printf("Entering init function. \n\r");
 #endif
 
     //Reset all the headers to 0
-    for(unsigned int i = NBANKS; i != 0; --i) *(dpBankStartAddr[i]) = 0;
+    for(unsigned int i = NBANKS-1; i != 0; --i) *(dpBankStartAddr[i]) = 0;
 
     //Read interrupt bit to clear previous interrupt state
-    unsigned int dummy = *dpIntAddr;
+    volatile unsigned int dummy = *dpIRQRevAddr;
 
     //set running state to be ready for beam
     state = BOS;
 
     //set the number of words in SDRAM to 0
     nWordsTotal = 0;
+
+#if (BeamOnDBG > 0)
+    printf("Leaving init function. \n\r");
+#endif
 }
 
 //------------------------------------------------------------------------------
@@ -96,8 +104,8 @@ void init(void)
 //------------------------------------------------------------------------------
 void beamOnTransfer(void)
 {
-#if defined(BeamOnDBG)
-    TRACE_DEBUG("Entering beamOnTransfer function. \n\r");
+#if (BeamOnDBG > 0)
+    printf("Entering beamOnTransfer function. \n\r");
 #endif
 
     //Initialize address, state register, and DP headers
@@ -115,15 +123,16 @@ void beamOnTransfer(void)
             currentDPBank = (currentDPBank + 1) & BANKIDMASK;
             header = *(dpBankStartAddr[currentDPBank]);
 
-            if(state != BOS) break;
+            if(state != BOS) return;
         }
+        if(state != BOS) return;
 
         //extract nWords from header
         unsigned int nWords = (header & NWORDSMASK) >> 20;
-#if defined(BeamOnDBG)
-        if(nWords > NWORDSPERBANK)      TRACE_DEBUG("Number of words in bank %d exceeded bank size.", currentDPBank);
-        if(sdAddr + nWords > sdEndAddr) TRACE_DEBUG("SDRAM overflow.");
-        TRACE_DEBUG("- Bank %d header = %08X, has %d words: \n\r", currentDPBank, header, nWords);
+#if (BeamOnDBG > 0)
+        if(nWords > NWORDSPERBANK)      printf("Number of words in bank %u exceeded bank size.", currentDPBank);
+        if(sdAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
+        printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBank, header, nWords);
 #endif
 
         //move the content to SDRAM
@@ -131,12 +140,13 @@ void beamOnTransfer(void)
         sdAddr += nWords;
 
         //move the eventID word to SDRAM
+        __aeabi_memcpy(sdAddr, dpBankLastAddr[currentDPBank], 4);
+        ++sdAddr;
+#if (BeamOnDBG > 0)
         unsigned int eventID = *(dpBankLastAddr[currentDPBank]);
-        *sdAddr = eventID; ++sdAddr;
-#if defined(BeamOnDBG)
-        TRACE_DEBUG("- EventID in this bank is: %8X\n\r", eventID);
         unsigned int bankID = eventID & BANKIDMASK;
-        if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.");
+        printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", eventID, bankID);
+        //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
 #endif
 
         //Reset the event header
@@ -145,11 +155,12 @@ void beamOnTransfer(void)
         //Update the number of words in SD
         nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
 
-#if defined(BeamOnDBG)
-        TRACE_DEBUG("- State %d: finished reading bank %d, eventID = %08X, has %d words, %d words in SDRAM now.\n\r", state, currentDPBank, eventID, nWords, nWordsTotal);
-#if (TRACE_LEVEL > TRACE_LEVEL_DEBUG)
+#if (BeamOnDBG > 0)
+        printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBank, eventID, nWords, nWordsTotal);
+        printf("- IRQ state: level = %u, content = %u\n\r", PIO_Get(&pinPC11), *dpIRQRevAddr);
+#if (BeamOnDBG > 1)
         unsigned int n = sdAddr - sdStartAddr;
-        for(unsigned int i = 0; i < n; ++i) TRACE_DEBUG("-- %d: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
+        for(unsigned int i = 0; i < n; ++i) printf("-- %u: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
 #endif
 #endif
 
@@ -157,80 +168,84 @@ void beamOnTransfer(void)
         currentDPBank = (currentDPBank + 1) & BANKIDMASK;
     }
 
-#if defined(BeamOnDBG)
-    TRACE_DEBUG("Exiting beamOnTransfer, state = %d\n\r", state);
+#if (BeamOnDBG > 0)
+    printf("Exiting beamOnTransfer, state = %u\n\r", state);
 #endif
 }
 
 //------------------------------------------------------------------------------
 /// transfer from SDRam to DP during beam off time
 //------------------------------------------------------------------------------
-const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
 void beamOffTransfer(void)
 {
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("Entering beamOffTransfer function, state = %d\n\r", state);
+#if (BeamOffDBG > 0)
+    printf("Entering beamOffTransfer function, state = %u\n\r", state);
 #endif
 
     //Acknowledge interrupt from PC11
     unsigned int dp_isr = PIO_GetISR(&pinPC11);
     unsigned int dp_lev = PIO_Get(&pinPC11);
-    unsigned int dummy = *dpIntAddr;
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", dp_isr, dp_lev);
+    volatile unsigned int dummy = *dpIRQRevAddr;
+#if (BeamOffDBG > 0)
+    printf("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", dummy, dp_lev);
 #endif
-    if(dp_lev == 1) //only trigger on positive edge
-    {
-        return;
-    }
+    if(dp_lev == 1) return; //only trigger on positive edge
 
     //If it's the first entry in this spill, set state to EOS to stop beam on reading
     if(state == BOS)
     {
-#if defined(beamOffTransfer)
-        TRACE_DEBUG("- First time entering beamOffTransfer in this spill, state = %d, set it to %d\n\r", state, EOS);
+#if (BeamOffDBG > 0)
+        printf("- First time entering beamOffTransfer in this spill, state = %u, set it to %x\n\r", state, EOS);
 #endif
         state = EOS;
         currentSDAddr = sdStartAddr;  //initialize SD read address
+
+#if (BeamOffDBG > 1)
+        for(unsigned int i = 0; i < nWordsTotal; ++i) printf("--- %u: %08X = %08X\n\r", i, currentSDAddr+i, *(currentSDAddr+i));
+#endif
     }
     else if(state == WAIT)
     {
-#if defined(beamOffTransfer)
-        TRACE_DEBUG("- Last time entering beamOffTransfer in this spill, state = %d, set it to %d\n\r", state, READY);
+#if (BeamOffDBG > 0)
+        printf("- Last time entering beamOffTransfer in this spill, state = %u, set it to %x\n\r", state, READY);
 #endif
         state = READY;
         return;
     }
 
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
+#if (BeamOffDBG > 0)
+    printf("- Currently the SD pointer is at %08X\n\r", currentSDAddr);
 #endif
 
     //Write as much data as possible to the DP memory, save the last word for word count
     unsigned int nWords = NDPWORDS - 1;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("- Currently SDRAM has %d words, will transfer %d words from to DPRAM.\n\r", nWordsTotal, nWords);
+#if (BeamOffDBG > 0)
+    printf("- Currently SDRAM has %u words, will transfer %u words from SD to DPRAM.\n\r", nWordsTotal, nWords);
 #endif
 
     //Write nWords to the first word at DP
-    lPTR dpAddr = dpStartAddr;
-    *dpAddr = nWords; ++dpAddr;
+    __aeabi_memcpy(dpStartAddr, &nWords, 4);
 
     //Transfer nWords words from SD to DP
-    memcpy(dpAddr, currentSDAddr, nWords << 2);
-    currentSDAddr += nWords;
+    lPTR dpAddr = dpStartAddr + 1;
+    for(unsigned int i = nWords; i != 0; --i)
+    {
+        __aeabi_memcpy(dpAddr++, currentSDAddr++, 4);
+    }
+
+#if (BeamOffDBG > 1)
+    printf("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
+    for(unsigned int i = 0; i <= nWords; ++i) printf("-!- %u: %08X = %08X\n\r", i, dpStartAddr+i, *(dpStartAddr+i));
+#endif
 
     //Subtract the nWords from nWordsTotal, and reset running state to WAIT if it's all done
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("- Currently SDRAM has %d words, will transfer %d words from to DPRAM.\n\r", nWordsTotal, nWords);
-#endif
     nWordsTotal = nWordsTotal - nWords;
     if(nWordsTotal == 0) state = WAIT;
 
-#if defined(beamOffTransfer)
-    TRACE_DEBUG("- %d words left in SDRAM, state code is set to %d\n\r", nWordsTotal, state);
-    TRACE_DEBUG("Leaving beamOffTransfer\n\r");
+#if (BeamOffDBG > 0)
+    printf("- %u words left in SDRAM, state code is set to %u\n\r", nWordsTotal, state);
+    printf("Leaving beamOffTransfer\n\r");
 #endif
 }
 
@@ -315,6 +330,9 @@ int main(void)
     ConfigureLED();
     BOARD_ConfigureSdram(32);
     ConfigureDPRam();
+
+    //Write everything in DP to 0
+    __aeabi_memset(dpStartAddr, NDPWORDS << 2, 0);
 
     // Set to be ready for beam
     state = READY;
