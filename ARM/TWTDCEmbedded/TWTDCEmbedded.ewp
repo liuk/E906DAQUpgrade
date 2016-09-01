@@ -183,7 +183,9 @@
           <name>CCDefines</name>
           <state>at91sam9260</state>
           <state>sdram</state>
-          <state>TRACE_LEVEL=4</state>
+          <state>TRACE_LEVEL=0</state>
+          <state>BeamOnDBG=0</state>
+          <state>BeamOffDBG=1</state>
         </option>
         <option>
           <name>CCPreprocFile</name>
@@ -244,7 +246,7 @@
         <option>
           <name>CCAllowList</name>
           <version>1</version>
-          <state>00000000</state>
+          <state>10010100</state>
         </option>
         <option>
           <name>CCDebugInfo</name>
@@ -334,7 +336,7 @@
         </option>
         <option>
           <name>CCOptLevel</name>
-          <state>0</state>
+          <state>2</state>
         </option>
         <option>
           <name>CCOptStrategy</name>
@@ -343,7 +345,7 @@
         </option>
         <option>
           <name>CCOptLevelSlave</name>
-          <state>0</state>
+          <state>2</state>
         </option>
         <option>
           <name>CompilerMisraRules98</name>

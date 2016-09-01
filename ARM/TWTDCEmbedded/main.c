@@ -51,6 +51,9 @@ volatile unsigned int state = BOS;
 /// Total number of words in this spill
 volatile unsigned int nWordsTotal = 0;
 
+/// Header position index
+unsigned int headerPos = 0;
+
 /// Pointer to a long int or unsigned int
 typedef unsigned long* lPTR;    // int and long on ARM are both 32-bit, learnt sth new
 
@@ -61,14 +64,18 @@ const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PUL
 // start and end address of DP and SD
 const lPTR dpStartAddr  = (lPTR)0x50000000;
 const lPTR dpEndAddr    = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
-const lPTR dpIRQRevAddr = (lPTR)0x5001fff8;
-const lPTR dpIRQSndAddr = (lPTR)0x5001ffff;
 const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x20200000 taking 0x8000 bytes  --- temporary
 const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
+// Dual-port configuration/operation address
+const lPTR dpHeaderRegAddr  = (lPTR)0x5001ffe8;   //register for the header position -- 0x7ffa
+const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt -- 0x7ffe
+const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt    -- 0x7fff
+
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
-lPTR dpBankLastAddr[NBANKS];     // the last word of DP memory bank -- where eventID is saved
+lPTR dpBankEventIDAddr[NBANKS];  // the last word of DP memory bank -- where eventID is saved
+lPTR dpBankHeaderAddr[NBANKS];   // configured at start time where header of event is stored
 
 // Address of current read address from SD
 lPTR currentSDAddr = 0;          // sdStartAddr;
@@ -83,7 +90,7 @@ void init(void)
 #endif
 
     //Reset all the headers to 0
-    for(unsigned int i = NBANKS-1; i != 0; --i) *(dpBankStartAddr[i]) = 0;
+    for(unsigned int i = NBANKS-1; i != 0; --i) *(dpBankHeaderAddr[i]) = 0;
 
     //Read interrupt bit to clear previous interrupt state
     volatile unsigned int dummy = *dpIRQRevAddr;
@@ -97,6 +104,24 @@ void init(void)
 #if (BeamOnDBG > 0)
     printf("Leaving init function. \n\r");
 #endif
+}
+
+//------------------------------------------------------------------------------
+/// This is a manual reset, force reload from RomBOOT --- by TEK
+//------------------------------------------------------------------------------
+unsigned short myReset()
+{
+    //To avoid infinit reset
+    init();
+
+    //RSTC_RCR = AT91C_RSTC_PROCRST;
+    *AT91C_RSTC_RMR = (0xA5<<24) | (0x4<<8) | AT91C_RSTC_URSTIEN | AT91C_RSTC_PROCRST;
+    *AT91C_SHDWC_SHCR = AT91C_SHDWC_SHDW;
+    AT91C_BASE_PMC->PMC_SCDR= 0xFFFFFFFF;
+    AT91C_BASE_RSTC->RSTC_RCR = 0xA5000005; // Controller+Periph
+    asm("b .\n");
+
+    return 0;
 }
 
 //------------------------------------------------------------------------------
@@ -117,15 +142,15 @@ void beamOnTransfer(void)
     while(state == BOS)
     {
         //Read all the bank headers until the next finished bank
-        unsigned int header = *(dpBankStartAddr[currentDPBank]);
+        unsigned int header = *(dpBankHeaderAddr[currentDPBank]);
         while(header == 0)
         {
             currentDPBank = (currentDPBank + 1) & BANKIDMASK;
-            header = *(dpBankStartAddr[currentDPBank]);
+            header = *(dpBankHeaderAddr[currentDPBank]);
 
+            if(header == 0xe906ffff) myReset();
             if(state != BOS) return;
         }
-        if(state != BOS) return;
 
         //extract nWords from header
         unsigned int nWords = (header & NWORDSMASK) >> 20;
@@ -134,23 +159,24 @@ void beamOnTransfer(void)
         if(sdAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
         printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBank, header, nWords);
 #endif
+        if(state != BOS) return;
 
         //move the content to SDRAM
         __aeabi_memcpy(sdAddr, dpBankStartAddr[currentDPBank], nWords << 2);
         sdAddr += nWords;
 
         //move the eventID word to SDRAM
-        __aeabi_memcpy(sdAddr, dpBankLastAddr[currentDPBank], 4);
+        __aeabi_memcpy(sdAddr, dpBankEventIDAddr[currentDPBank], 4);
         ++sdAddr;
 #if (BeamOnDBG > 0)
-        unsigned int eventID = *(dpBankLastAddr[currentDPBank]);
+        unsigned int eventID = *(dpBankEventIDAddr[currentDPBank]);
         unsigned int bankID = eventID & BANKIDMASK;
         printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", eventID, bankID);
         //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
 #endif
 
         //Reset the event header
-        *(dpBankStartAddr[currentDPBank]) = 0;
+        *(dpBankHeaderAddr[currentDPBank]) = 0;
 
         //Update the number of words in SD
         nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
@@ -209,7 +235,8 @@ void beamOffTransfer(void)
 #if (BeamOffDBG > 0)
         printf("- Last time entering beamOffTransfer in this spill, state = %u, set it to %x\n\r", state, READY);
 #endif
-        state = READY;
+        if(dummy == 0xe906e907) state = READY;
+        *dpStartAddr = 0;
         return;
     }
 
@@ -217,8 +244,8 @@ void beamOffTransfer(void)
     printf("- Currently the SD pointer is at %08X\n\r", currentSDAddr);
 #endif
 
-    //Write as much data as possible to the DP memory, save the last word for word count
-    unsigned int nWords = NDPWORDS - 1;
+    //Write as much data as possible to the DP memory, save the last 6 words for configureation and first word for word count
+    unsigned int nWords = NDPWORDS - 7;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
 #if (BeamOffDBG > 0)
     printf("- Currently SDRAM has %u words, will transfer %u words from SD to DPRAM.\n\r", nWordsTotal, nWords);
@@ -247,21 +274,6 @@ void beamOffTransfer(void)
     printf("- %u words left in SDRAM, state code is set to %u\n\r", nWordsTotal, state);
     printf("Leaving beamOffTransfer\n\r");
 #endif
-}
-
-//------------------------------------------------------------------------------
-/// This is a manual reset, force reload from RomBOOT --- by TEK
-//------------------------------------------------------------------------------
-unsigned short myReset()
-{
-    //RSTC_RCR = AT91C_RSTC_PROCRST;
-    *AT91C_RSTC_RMR = (0xA5<<24) | (0x4<<8) | AT91C_RSTC_URSTIEN | AT91C_RSTC_PROCRST;
-    *AT91C_SHDWC_SHCR = AT91C_SHDWC_SHDW;
-    AT91C_BASE_PMC->PMC_SCDR= 0xFFFFFFFF;
-    AT91C_BASE_RSTC->RSTC_RCR = 0xA5000005; // Controller+Periph
-    asm ("b .\n");
-
-    return 0;
 }
 
 //------------------------------------------------------------------------------
@@ -300,12 +312,20 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
-    dpBankStartAddr[0] = dpStartAddr;
-    *(dpBankStartAddr[0]) = 0;
-    for(unsigned int i = 1; i < NBANKS; ++i)
+    headerPos = NWORDSPERBANK;
+    while(headerPos >= NWORDSPERBANK) headerPos = *dpHeaderRegAddr;
+    for(unsigned int i = 0; i < NBANKS; ++i)
     {
-        dpBankStartAddr[i] = dpBankStartAddr[i-1] + NWORDSPERBANK;
-        dpBankLastAddr[i] = dpBankStartAddr[i] + NWORDSPERBANK - 3;
+        if(i == 0)
+        {
+            dpBankStartAddr[i] = dpStartAddr;
+        }
+        else
+        {
+            dpBankStartAddr[i] = dpBankStartAddr[i-1] + NWORDSPERBANK;
+        }
+        dpBankHeaderAddr[i] = dpBankStartAddr[i] + headerPos;
+        dpBankEventIDAddr[i] = dpBankStartAddr[i] + NWORDSPERBANK - 3;
     }
 }
 
@@ -340,6 +360,9 @@ int main(void)
     // Main loop
     while(1)
     {
+        //If reset is issued, reset
+        if(*(dpBankHeaderAddr[0]) == 0xe906ffff) myReset();
+
         //Enters beam on transfer
         if(state == READY) beamOnTransfer();
 

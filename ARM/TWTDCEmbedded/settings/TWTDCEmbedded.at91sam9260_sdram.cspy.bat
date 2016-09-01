@@ -25,7 +25,7 @@ if not "%~1" == "" goto debugFile
 
 @echo on 
 
-"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.3\common\bin\cspybat" -f "C:\Users\kunli\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.general.xcl" --backend -f "C:\Users\kunli\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.driver.xcl" 
+"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.3\common\bin\cspybat" -f "C:\Users\liuk\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.general.xcl" --backend -f "C:\Users\liuk\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.driver.xcl" 
 
 @echo off 
 goto end 
@@ -34,7 +34,7 @@ goto end
 
 @echo on 
 
-"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.3\common\bin\cspybat" -f "C:\Users\kunli\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.general.xcl" "--debug_file=%~1" --backend -f "C:\Users\kunli\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.driver.xcl" 
+"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.3\common\bin\cspybat" -f "C:\Users\liuk\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.general.xcl" "--debug_file=%~1" --backend -f "C:\Users\liuk\Documents\GitHub\E906DAQUpgrade\ARM\TWTDCEmbedded\settings\TWTDCEmbedded.at91sam9260_sdram.driver.xcl" 
 
 @echo off 
 :end
