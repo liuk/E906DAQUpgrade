@@ -153,7 +153,16 @@ void beamOnTransfer(void)
         }
 
         //extract nWords from header
-        unsigned int nWords = (header & NWORDSMASK) >> 20;
+        unsigned int nWords;
+        if(headerPos == 0)
+        {
+            nWords = (header & NWORDSMASK) >> 20;
+        }
+        else
+        {
+            nWords = headerPos;
+        }
+
 #if (BeamOnDBG > 0)
         if(nWords > NWORDSPERBANK)      printf("Number of words in bank %u exceeded bank size.", currentDPBank);
         if(sdAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
@@ -314,6 +323,7 @@ void ConfigureDPRam()
     //Start/end address of each DP memory bank
     headerPos = NWORDSPERBANK;
     while(headerPos >= NWORDSPERBANK) headerPos = *dpHeaderRegAddr;
+    printf("\n - Initializing DP ram, header pos = 0x%8x\n", headerPos);
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
         if(i == 0)
