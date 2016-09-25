@@ -153,15 +153,11 @@ void beamOnTransfer(void)
         }
 
         //extract nWords from header
-        unsigned int nWords;
-        if(headerPos == 0)
-        {
-            nWords = (header & NWORDSMASK) >> 20;
-        }
-        else
-        {
-            nWords = headerPos;
-        }
+#if (ScalarMode > 0)
+        unsigned int nWords = headerPos;
+#else
+        unsigned int nWords = (header & NWORDSMASK) >> 20;
+#endif
 
 #if (BeamOnDBG > 0)
         if(nWords > NWORDSPERBANK)      printf("Number of words in bank %u exceeded bank size.", currentDPBank);
@@ -260,15 +256,15 @@ void beamOffTransfer(void)
     printf("- Currently SDRAM has %u words, will transfer %u words from SD to DPRAM.\n\r", nWordsTotal, nWords);
 #endif
 
-    //Write nWords to the first word at DP
-    __aeabi_memcpy(dpStartAddr, &nWords, 4);
-
     //Transfer nWords words from SD to DP
     lPTR dpAddr = dpStartAddr + 1;
     for(unsigned int i = nWords; i != 0; --i)
     {
         __aeabi_memcpy(dpAddr++, currentSDAddr++, 4);
     }
+
+    //Write nWords to the first word at DP
+    __aeabi_memcpy(dpStartAddr, &nWords, 4);
 
 #if (BeamOffDBG > 1)
     printf("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
@@ -321,9 +317,13 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
+#if (ScalarMode > 0)
     headerPos = NWORDSPERBANK;
     while(headerPos >= NWORDSPERBANK) headerPos = *dpHeaderRegAddr;
     printf("\n - Initializing DP ram, header pos = 0x%8x\n", headerPos);
+#else
+    headerPos = 0;
+#endif
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
         if(i == 0)

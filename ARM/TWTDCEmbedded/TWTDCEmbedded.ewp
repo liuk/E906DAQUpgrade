@@ -186,6 +186,7 @@
           <state>TRACE_LEVEL=0</state>
           <state>BeamOnDBG=0</state>
           <state>BeamOffDBG=1</state>
+          <state>ScalarMode=0</state>
         </option>
         <option>
           <name>CCPreprocFile</name>
