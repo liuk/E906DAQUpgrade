@@ -185,7 +185,7 @@
           <state>sdram</state>
           <state>TRACE_LEVEL=0</state>
           <state>BeamOnDBG=0</state>
-          <state>BeamOffDBG=1</state>
+          <state>BeamOffDBG=2</state>
           <state>ScalarMode=0</state>
         </option>
         <option>
@@ -247,7 +247,7 @@
         <option>
           <name>CCAllowList</name>
           <version>1</version>
-          <state>10010100</state>
+          <state>00000000</state>
         </option>
         <option>
           <name>CCDebugInfo</name>
@@ -337,7 +337,7 @@
         </option>
         <option>
           <name>CCOptLevel</name>
-          <state>2</state>
+          <state>0</state>
         </option>
         <option>
           <name>CCOptStrategy</name>
@@ -346,7 +346,7 @@
         </option>
         <option>
           <name>CCOptLevelSlave</name>
-          <state>2</state>
+          <state>0</state>
         </option>
         <option>
           <name>CompilerMisraRules98</name>

@@ -2,145 +2,106 @@
 
 <project>
   <fileVersion>2</fileVersion>
-  <fileChecksum>536635983</fileChecksum>
+  <fileChecksum>2975630303</fileChecksum>
   <configuration>
     <name>at91sam9260_sdram</name>
     <outputs>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9260-ek-sdram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9261-ek-norflash.mac</file>
-      <file>$TOOLKIT_DIR$\lib\m5E_al.a</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9263-ek-sdram.mac</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Product.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\tc.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_memories.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_cstartup_iar.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\main.lst</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pit.o</file>
+      <file>$TOOLKIT_DIR$\inc\c\ysizet.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\TWTDCEmbedded.map</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\cp15.pbi</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\main.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\pmc.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\main.o</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\TWTDCEmbedded.map</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_memories.pbi</file>
       <file>$TOOLKIT_DIR$\inc\c\DLib_Defaults.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\tc.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\aic.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_lowlevel.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\pmc.lst</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\cp15_asm_iar.o</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio.o</file>
-      <file>$TOOLKIT_DIR$\inc\c\ysizet.h</file>
-      <file>$TOOLKIT_DIR$\inc\c\DLib_Config_Full.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\TWTDCEmbedded.pbd</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_memories.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\main.o</file>
+      <file>$TOOLKIT_DIR$\lib\m5E_al.a</file>
+      <file>$TOOLKIT_DIR$\inc\c\stdarg.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\led.lst</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_memories.o</file>
-      <file>$TOOLKIT_DIR$\lib\dl5E_alf.a</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_lowlevel.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio_it.o</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\cp15.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pmc.o</file>
-      <file>$TOOLKIT_DIR$\inc\c\ystdio.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio_it.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\dbgu.lst</file>
-      <file>$TOOLKIT_DIR$\lib\shs_l.a</file>
-      <file>$TOOLKIT_DIR$\inc\c\yvals.h</file>
-      <file>$TOOLKIT_DIR$\lib\rt5E_al.a</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\aic.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\pit.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pmc.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\pio.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_lowlevel.o</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_cstartup_iar.o</file>
-      <file>$TOOLKIT_DIR$\inc\c\DLib_Threads.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\pio_it.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\cp15_asm_iar.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\tc.o</file>
-      <file>$TOOLKIT_DIR$\inc\c\DLib_Product.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Exe\TWTDCEmbedded.out</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pit.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Exe\TWTDCEmbedded.bin</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\aic.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\led.pbi</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\List\tc.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\dbgu.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pmc.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Exe\TWTDCEmbedded.out</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\led.pbi</file>
       <file>$PROJ_DIR$\at91sam9260_sdram\Obj\led.o</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Threads.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\cp15.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio_it.pbi</file>
       <file>$TOOLKIT_DIR$\inc\c\xencoding_limits.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\dbgu.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_lowlevel.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pmc.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\aic.pbi</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\pio.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio.pbi</file>
+      <file>$TOOLKIT_DIR$\inc\c\ycheck.h</file>
+      <file>$TOOLKIT_DIR$\lib\shs_l.a</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Exe\TWTDCEmbedded.bin</file>
+      <file>$TOOLKIT_DIR$\lib\rt5E_al.a</file>
+      <file>$TOOLKIT_DIR$\inc\c\intrinsics.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio_it.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\tc.o</file>
+      <file>$TOOLKIT_DIR$\inc\c\stdio.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\TWTDCEmbedded.pbd</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\dbgu.pbi</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\pmc\pmc.h</file>
+      <file>$PROJ_DIR$\..\at91lib\utility\assert.h</file>
+      <file>$PROJ_DIR$\..\at91lib\utility\led.c</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.h</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\pmc\pmc.c</file>
+      <file>$PROJ_DIR$\..\at91lib\utility\led.h</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\tc\tc.c</file>
+      <file>$PROJ_DIR$\..\at91lib\utility\trace.h</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\tc\tc.h</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.c</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\at91sam9260\sdram.icf</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\aic\aic.c</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.c</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.c</file>
       <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\at91sam9260\AT91SAM9260.h</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_cstartup_iar.s</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.h</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_lowlevel.c</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15_asm_iar.s</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.c</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.h</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio.c</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio.h</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.h</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.h</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\at91sam9260\sram.icf</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_lowlevel.c</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.c</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.h</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.h</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board.h</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.h</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15_asm_iar.s</file>
-      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\at91sam9260\norflash.icf</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\aic\aic.c</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.c</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.c</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.c</file>
-      <file>$PROJ_DIR$\..\at91lib\peripherals\pmc\pmc.c</file>
       <file>$PROJ_DIR$\..\at91lib\peripherals\aic\aic.h</file>
-      <file>$PROJ_DIR$\..\at91lib\utility\led.c</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7x-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-stk-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-dk-ddram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7a3-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-dk-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7l-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7s-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9260-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7se-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9260-ek-norflash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-stk-sdram.mac</file>
-      <file>$PROJ_DIR$\..\at91lib\utility\assert.h</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9261-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7a3-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-dk-bcram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91cap9-dk-sdram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7s-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7se-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7se-ek-sdram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7xc-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7xc-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7x-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9261-ek-sdram.mac</file>
-      <file>$PROJ_DIR$\..\at91lib\utility\led.h</file>
-      <file>$PROJ_DIR$\..\at91lib\utility\trace.h</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam7l-stk-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9m10-ek-ddram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9g20-ek-norflash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9rl-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9xe-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9g20-ek-sdram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9m10-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9263-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9xe-ek-flash.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9xe-ek-sdram.mac</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.c</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.h</file>
+      <file>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.c</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\at91sam9260\sdram.icf</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board.h</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_cstartup_iar.s</file>
+      <file>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.h</file>
       <file>$PROJ_DIR$\main.c</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9g20-ek-sram.mac</file>
-      <file>$PROJ_DIR$\..\..\..\..\IAR Embedded Workbench\getting-started-project-at91sam9260-ek-tek\resources\iar\at91sam9rl-ek-sdram.mac</file>
-      <file>$TOOLKIT_DIR$\inc\c\ycheck.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\led.lst</file>
-      <file>$TOOLKIT_DIR$\inc\c\intrinsics.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_lowlevel.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\dbgu.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_memories.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\aic.o</file>
-      <file>$TOOLKIT_DIR$\inc\c\stdarg.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\board_cstartup_iar.lst</file>
-      <file>$TOOLKIT_DIR$\inc\c\stdio.h</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\List\main.lst</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pio.pbi</file>
-      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\cp15.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\pit.pbi</file>
+      <file>$TOOLKIT_DIR$\inc\c\yvals.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\pit.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_cstartup_iar.o</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\Obj\board_lowlevel.o</file>
+      <file>$TOOLKIT_DIR$\lib\dl5E_alf.a</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\cp15.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\dbgu.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\aic.lst</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\pio_it.lst</file>
+      <file>$TOOLKIT_DIR$\inc\c\ystdio.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Config_Full.h</file>
+      <file>$PROJ_DIR$\at91sam9260_sdram\List\cp15_asm_iar.lst</file>
     </outputs>
     <file>
       <name>[ROOT_NODE]</name>
       <outputs>
         <tool>
           <name>ILINK</name>
-          <file> 41 9</file>
+          <file> 24 8</file>
         </tool>
       </outputs>
     </file>
@@ -148,278 +109,18 @@
       <name>$PROJ_DIR$\at91sam9260_sdram\Exe\TWTDCEmbedded.out</name>
       <outputs>
         <tool>
-          <name>ILINK</name>
-          <file> 9</file>
-        </tool>
-        <tool>
           <name>OBJCOPY</name>
-          <file> 43</file>
+          <file> 39</file>
+        </tool>
+        <tool>
+          <name>ILINK</name>
+          <file> 8</file>
         </tool>
       </outputs>
       <inputs>
         <tool>
           <name>ILINK</name>
-          <file> 54 121 35 34 18 127 13 47 48 8 14 21 4 23 39 27 29 2 19</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\tc\tc.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 12</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 46 39</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 66 55 52</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 52 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 119</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 26 47</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 115 11 28 66 49 36 55 122 124 16 40 15 65 24</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 65 66 55 124 115 28 11 16 40 49 36 15 24</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_cstartup_iar.s</name>
-      <outputs>
-        <tool>
-          <name>AARM</name>
-          <file> 35 123</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>AARM</name>
-          <file> 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\pio\pio.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 126</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 33 14</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 66 58 55</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 58 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_lowlevel.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 118</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 20 34</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 50 67 55 66</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 66 55 67 50</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 10</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 120 18</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 58 55 66</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 66 55 58</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15_asm_iar.s</name>
-      <outputs>
-        <tool>
-          <name>AARM</name>
-          <file> 13 38</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>AARM</name>
-          <file> 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\aic\aic.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 30</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 44 121</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 66 55 75</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 75 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 25</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 37 21</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 115 58 75 101 55 24 16 59 66 88 124 28 40 15 11 49 36 65</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 59 58 66 55 75 88 124 115 28 11 16 40 49 36 15 24 101 65</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 5</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 22 127</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 115 101 58 24 16 64 117 55 66 28 40 65 124 15 11 49 36</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 66 55 101 65 58 124 115 28 11 16 40 49 36 15 24 64 117</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 42</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 31 4</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 66 55 60</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 60 66 55</file>
-        </tool>
-      </inputs>
-    </file>
-    <file>
-      <name>$PROJ_DIR$\..\at91lib\peripherals\pmc\pmc.c</name>
-      <outputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 32</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 7 23</file>
-        </tool>
-      </outputs>
-      <inputs>
-        <tool>
-          <name>BICOMP</name>
-          <file> 66 40 115 88 124 28 101 64 55 24 16 58 50 15 11 49 36 65</file>
-        </tool>
-        <tool>
-          <name>ICCARM</name>
-          <file> 50 66 55 88 124 115 28 11 16 40 49 36 15 24 101 65 58 64</file>
+          <file> 71 12 79 80 21 28 15 31 26 17 4 42 6 33 43 38 40 18 81</file>
         </tool>
       </inputs>
     </file>
@@ -428,21 +129,281 @@
       <outputs>
         <tool>
           <name>BICOMP</name>
-          <file> 45</file>
+          <file> 25</file>
         </tool>
         <tool>
           <name>ICCARM</name>
-          <file> 116 48</file>
+          <file> 20 26</file>
         </tool>
       </outputs>
       <inputs>
         <tool>
           <name>BICOMP</name>
-          <file> 58 66 55 100</file>
+          <file> 66 72 59 52</file>
         </tool>
         <tool>
           <name>ICCARM</name>
-          <file> 100 66 55 58</file>
+          <file> 52 72 59 66</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\pmc\pmc.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 23</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 14 33</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 72 0 37 48 44 77 54 60 59 86 87 66 47 7 11 30 27 64</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 47 72 59 48 44 37 77 11 87 0 30 27 7 86 54 64 66 60</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\tc\tc.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 1</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 22 43</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 72 59 55</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 55 72 59</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\aic\aic.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 34</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 84 12</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 72 59 67</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 67 72 59</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_memories.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 16</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 2 21</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 66 59 72</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 72 59 66</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 9</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 82 28</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 37 54 66 86 87 60 41 59 72 77 0 64 44 7 11 30 27</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 72 59 54 64 66 44 37 77 11 87 0 30 27 7 86 60 41</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_lowlevel.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 13</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 32 80</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 47 74 59 72</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 72 59 74 47</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\cp15\cp15_asm_iar.s</name>
+      <outputs>
+        <tool>
+          <name>AARM</name>
+          <file> 15 88</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>AARM</name>
+          <file> 72 59</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\dbgu\dbgu.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 46</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 83 31</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 37 11 77 72 30 27 59 19 44 87 0 7 64 86</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 64 72 59 44 37 77 11 87 0 30 27 7 86</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\pio\pio.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 36</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 35 4</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 72 66 59</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 66 72 59</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\pio\pio_it.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 29</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 85 42</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 37 66 67 54 59 86 87 69 72 48 44 77 0 7 11 30 27 64</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 69 66 72 59 67 48 44 37 77 11 87 0 30 27 7 86 54 64</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\peripherals\pit\pit.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 76</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 78 6</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 72 59 50</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 50 72 59</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\..\at91lib\boards\at91sam9260-ek\board_cstartup_iar.s</name>
+      <outputs>
+        <tool>
+          <name>AARM</name>
+          <file> 79 3</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>AARM</name>
+          <file> 72 59</file>
         </tool>
       </inputs>
     </file>
@@ -451,21 +412,21 @@
       <outputs>
         <tool>
           <name>BICOMP</name>
-          <file> 6</file>
+          <file> 10</file>
         </tool>
         <tool>
           <name>ICCARM</name>
-          <file> 125 8</file>
+          <file> 5 17</file>
         </tool>
       </outputs>
       <inputs>
         <tool>
           <name>BICOMP</name>
-          <file> 36 101 60 66 11 58 52 55 115 28 67 59 75 100 124 15 49 65 24 16 40</file>
+          <file> 27 54 50 59 72 11 66 55 37 77 74 69 67 52 44 7 30 64 86 87 0</file>
         </tool>
         <tool>
           <name>ICCARM</name>
-          <file> 66 55 67 58 59 60 75 52 100 101 65 124 115 28 11 16 40 49 36 15 24</file>
+          <file> 72 59 74 66 69 50 67 55 52 54 64 44 37 77 11 87 0 30 27 7 86</file>
         </tool>
       </inputs>
     </file>
