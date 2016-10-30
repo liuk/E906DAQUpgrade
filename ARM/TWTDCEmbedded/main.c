@@ -31,6 +31,9 @@
 #define NWORDSPERBANK       0x400     //1K 32-bit words per bank
 #define NBYTESPERBANK       0x1000    //4096 = 32K * 32 / 4
 
+/// EventID register position
+#define EVENTIDPOS          0x100
+
 /// Masks to retrive info
 #define NWORDSMASK          0x7ff00000
 #define BANKIDMASK          0x0000000f
@@ -69,8 +72,8 @@ const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Dual-port configuration/operation address
 const lPTR dpHeaderRegAddr  = (lPTR)0x5001ffe8;   //register for the header position -- 0x7ffa
-const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt -- 0x7ffe
-const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt    -- 0x7fff
+const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt    -- 0x7ffe
+const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt       -- 0x7fff
 
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
@@ -115,7 +118,7 @@ unsigned short myReset()
     init();
 
     //RSTC_RCR = AT91C_RSTC_PROCRST;
-    *AT91C_RSTC_RMR = (0xA5<<24) | (0x4<<8) | AT91C_RSTC_URSTIEN | AT91C_RSTC_PROCRST;
+    *AT91C_RSTC_RMR = (0xA5 << 24) | (0x4 << 8) | AT91C_RSTC_URSTIEN | AT91C_RSTC_PROCRST;
     *AT91C_SHDWC_SHCR = AT91C_SHDWC_SHDW;
     AT91C_BASE_PMC->PMC_SCDR= 0xFFFFFFFF;
     AT91C_BASE_RSTC->RSTC_RCR = 0xA5000005; // Controller+Periph
@@ -166,15 +169,31 @@ void beamOnTransfer(void)
 #endif
         if(state != BOS) return;
 
-        //move the content to SDRAM
-        __aeabi_memcpy(sdAddr, dpBankStartAddr[currentDPBank], nWords << 2);
-        sdAddr += nWords;
+        //move the content to SDRAM, apply zero suppression, the last word is eventID
+        lPTR dpAddr = dpBankStartAddr[currentDPBank];
+        unsigned int word = 0;
+        unsigned nWordsCounter = nWords;
+        while(nWordsCounter != 0)
+        {
+#if (ScalarMode == 0)
+            word = *dpAddr;
+            ++dpAddr;
+            if(word != 0)
+            {
+                __aeabi_memcpy(sdAddr++, &word, 4);
+                --nWordsCounter;
+            }
+#else
+            __aeabi_memcpy(sdAddr++, dpAddr++, 4);
+            --nWordsCounter;
+#endif
+        }
 
-        //move the eventID word to SDRAM
-        __aeabi_memcpy(sdAddr, dpBankEventIDAddr[currentDPBank], 4);
-        ++sdAddr;
-#if (BeamOnDBG > 0)
+        //Now move the event ID
         unsigned int eventID = *(dpBankEventIDAddr[currentDPBank]);
+        __aeabi_memcpy(sdAddr++, &eventID, 4);
+
+#if (BeamOnDBG > 0)
         unsigned int bankID = eventID & BANKIDMASK;
         printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", eventID, bankID);
         //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
@@ -335,7 +354,7 @@ void ConfigureDPRam()
             dpBankStartAddr[i] = dpBankStartAddr[i-1] + NWORDSPERBANK;
         }
         dpBankHeaderAddr[i] = dpBankStartAddr[i] + headerPos;
-        dpBankEventIDAddr[i] = dpBankStartAddr[i] + NWORDSPERBANK - 3;
+        dpBankEventIDAddr[i] = dpBankStartAddr[i] + EVENTIDPOS;
     }
 }
 
