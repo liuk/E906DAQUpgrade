@@ -18,6 +18,9 @@
 /// Size of DP in words -- 32K
 #define NDPWORDS            0x8000
 
+/// Size of the temp buffer
+#define BUFSIZE             512
+
 /// Size of SDRAM in bytes -- 64M - 0x10,0000 - 0x8000
 /// First 0x8000 bytes occuppied by user app, i.e. this program
 /// Last 0x100000 bytes occupied by u-boot handling the basics
@@ -57,6 +60,9 @@ volatile unsigned int nWordsTotal = 0;
 /// Header position index
 unsigned int headerPos = 0;
 
+/// Size of the block transfer
+unsigned int blkSize = 2000;
+
 /// Pointer to a long int or unsigned int
 typedef unsigned long* lPTR;    // int and long on ARM are both 32-bit, learnt sth new
 
@@ -71,9 +77,9 @@ const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x2020
 const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Dual-port configuration/operation address
-const lPTR dpHeaderRegAddr  = (lPTR)0x5001ffe8;   //register for the header position -- 0x7ffa
-const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt    -- 0x7ffe
-const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt       -- 0x7fff
+const lPTR dpCtrlRegAddr    = (lPTR)0x5001ffe8;   //register for run control parameters -- 0x7ffa
+const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt       -- 0x7ffe
+const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt          -- 0x7fff
 
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
@@ -82,6 +88,9 @@ lPTR dpBankHeaderAddr[NBANKS];   // configured at start time where header of eve
 
 // Address of current read address from SD
 lPTR currentSDAddr = 0;          // sdStartAddr;
+
+// Buffer for block transfer
+unsigned int buffer[BUFSIZE];
 
 //------------------------------------------------------------------------------
 /// initialize
@@ -172,30 +181,26 @@ void beamOnTransfer(void)
         //move the content to SDRAM, apply zero suppression, the last word is eventID
         lPTR dpAddr = dpBankStartAddr[currentDPBank];
         unsigned int word = 0;
-        unsigned nWordsCounter = nWords;
-        while(nWordsCounter != 0)
+        unsigned nWordsCounter = 0;
+        while(nWordsCounter != nWords)
         {
 #if (ScalarMode == 0)
             word = *dpAddr;
             ++dpAddr;
-            if(word != 0)
-            {
-                __aeabi_memcpy(sdAddr++, &word, 4);
-                --nWordsCounter;
-            }
+            if(word != 0) buffer[nWordsCounter++] = word;
 #else
-            __aeabi_memcpy(sdAddr++, dpAddr++, 4);
-            --nWordsCounter;
+            buffer[nWordsCounter++] = word;
 #endif
         }
 
         //Now move the event ID
-        unsigned int eventID = *(dpBankEventIDAddr[currentDPBank]);
-        __aeabi_memcpy(sdAddr++, &eventID, 4);
+        buffer[nWordsCounter++] = *(dpBankEventIDAddr[currentDPBank]);
+        __aeabi_memcpy(sdAddr, buffer, nWordsCounter << 2);
+        sdAddr = sdAddr + nWordsCounter;
 
 #if (BeamOnDBG > 0)
-        unsigned int bankID = eventID & BANKIDMASK;
-        printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", eventID, bankID);
+        unsigned int bankID = buffer[nWordsCounter-1] & BANKIDMASK;
+        printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", buffer[nWordsCounter-1], bankID);
         //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
 #endif
 
@@ -203,7 +208,7 @@ void beamOnTransfer(void)
         *(dpBankHeaderAddr[currentDPBank]) = 0;
 
         //Update the number of words in SD
-        nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
+        nWordsTotal = nWordsTotal + nWordsCounter;  //Total number of words = nWords in this event + 1 for eventID
 
 #if (BeamOnDBG > 0)
         printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBank, eventID, nWords, nWordsTotal);
@@ -269,7 +274,7 @@ void beamOffTransfer(void)
 #endif
 
     //Write as much data as possible to the DP memory, save the last 6 words for configureation and first word for word count
-    unsigned int nWords = NDPWORDS - 7;
+    unsigned int nWords = blkSize;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
 #if (BeamOffDBG > 0)
     printf("- Currently SDRAM has %u words, will transfer %u words from SD to DPRAM.\n\r", nWordsTotal, nWords);
@@ -336,13 +341,20 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
-#if (ScalarMode > 0)
     headerPos = NWORDSPERBANK;
-    while(headerPos >= NWORDSPERBANK) headerPos = *dpHeaderRegAddr;
-    printf("\n - Initializing DP ram, header pos = 0x%8x\n", headerPos);
-#else
+    blkSize = NDPWORDS;
+    unsigned int csr = 0x10000000;
     headerPos = 0;
-#endif
+    blkSize = 0x1000;
+    /*
+    while(headerPos >= NWORDSPERBANK || blkSize >= NDPWORDS)
+    {
+        csr = *dpCtrlRegAddr;
+        headerPos = csr & 0xffff;
+        blkSize = (csr & 0xffff0000) >> 16;
+    }*/
+    printf("\n\n - Initializing DP ram, header pos = 0x%8x, blkSize = 0x%8x\n", headerPos, blkSize);
+
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
         if(i == 0)
