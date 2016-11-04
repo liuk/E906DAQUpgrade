@@ -47,9 +47,18 @@
 #define WAIT                0x2       //transfer back is done, wait for last IRQ
 #define READY               0x3       //transfer is done, ready for next spill
 
+/// Commands, upper 16-bits are fixed at 0xe906
+#define RESETCMD            0xe906000f   //This command triggers the hardware RESET
+#define EOSCMD              0xe9060001   //This command is issued on EOS, starts on beam transfer
+#define TRANSFERCMD         0xe9060002   //This command is issued on flush event, starts one block transfer
+#define LASTEVTCMD          0xe9060003   //This command is issued on last flush, change state to wait
+
 //------------------------------------------------------------------------------
 //         Local variables
 //------------------------------------------------------------------------------
+/// Pointer to a long int or unsigned int
+typedef unsigned long* lPTR;    // int and long on ARM are both 32-bit, learnt sth new
+
 /// Global flag about the current state of running: 0 = BOS, 1 = EOS, 2 = Ready for next spill
 /// Note the definition of BOS/EOS/READY is not the same as standard E906 definition
 volatile unsigned int state = BOS;
@@ -63,8 +72,11 @@ unsigned int headerPos = 0;
 /// Size of the block transfer
 unsigned int blkSize = 2000;
 
-/// Pointer to a long int or unsigned int
-typedef unsigned long* lPTR;    // int and long on ARM are both 32-bit, learnt sth new
+// Address of current write/read address from SD
+volatile lPTR currentSDAddr = 0;
+
+// Current DP bank ID
+volatile unsigned int currentDPBankID = 0;
 
 /// interrupt port for dual-port mem
 const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PULLUP};       //Dual-port interrupt
@@ -85,9 +97,6 @@ const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt  
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
 lPTR dpBankEventIDAddr[NBANKS];  // the last word of DP memory bank -- where eventID is saved
 lPTR dpBankHeaderAddr[NBANKS];   // configured at start time where header of event is stored
-
-// Address of current read address from SD
-lPTR currentSDAddr = 0;          // sdStartAddr;
 
 // Buffer for block transfer
 unsigned int buffer[BUFSIZE];
@@ -145,83 +154,65 @@ void beamOnTransfer(void)
     printf("Entering beamOnTransfer function. \n\r");
 #endif
 
-    //Initialize address, state register, and DP headers
-    init();
+    //Read all the bank headers until the next finished bank
+    unsigned int header = 0;
+    while(header == 0) header = *(dpBankHeaderAddr[currentDPBankID]);
+    printf("--- %08x    %u\n\r", header, currentDPBankID);
 
-    //Start looping indefinitely
-    lPTR sdAddr = sdStartAddr;
-    unsigned int currentDPBank = 0;
-    while(state == BOS)
-    {
-        //Read all the bank headers until the next finished bank
-        unsigned int header = *(dpBankHeaderAddr[currentDPBank]);
-        while(header == 0)
-        {
-            currentDPBank = (currentDPBank + 1) & BANKIDMASK;
-            header = *(dpBankHeaderAddr[currentDPBank]);
-
-            if(header == 0xe906ffff) myReset();
-            if(state != BOS) return;
-        }
-
-        //extract nWords from header
+    //extract nWords from header
 #if (ScalarMode > 0)
-        unsigned int nWords = headerPos;
+    unsigned int nWords = headerPos;
 #else
-        unsigned int nWords = (header & NWORDSMASK) >> 20;
+    unsigned int nWords = (header & NWORDSMASK) >> 20;
 #endif
 
 #if (BeamOnDBG > 0)
-        if(nWords > NWORDSPERBANK)      printf("Number of words in bank %u exceeded bank size.", currentDPBank);
-        if(sdAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
-        printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBank, header, nWords);
+    if(nWords > NWORDSPERBANK)             printf("Number of words in bank %u exceeded bank size.", currentDPBankID);
+    if(currentSDAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
+    printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBankID, header, nWords);
 #endif
-        if(state != BOS) return;
 
-        //move the content to SDRAM, apply zero suppression, the last word is eventID
-        lPTR dpAddr = dpBankStartAddr[currentDPBank];
-        unsigned int word = 0;
-        unsigned nWordsCounter = 0;
-        while(nWordsCounter != nWords)
-        {
+    //move the content to SDRAM, apply zero suppression, the last word is eventID
+    lPTR dpAddr = dpBankStartAddr[currentDPBankID];
+    unsigned int word = 0;
+    unsigned int nWordsCounter = 0;
+    while(nWordsCounter != nWords)
+    {
+        word = *dpAddr;
+        ++dpAddr;
 #if (ScalarMode == 0)
-            word = *dpAddr;
-            ++dpAddr;
-            if(word != 0) buffer[nWordsCounter++] = word;
+        if(word != 0) buffer[nWordsCounter++] = word;
 #else
-            buffer[nWordsCounter++] = word;
+        buffer[nWordsCounter++] = word;
 #endif
-        }
-
-        //Now move the event ID
-        buffer[nWordsCounter++] = *(dpBankEventIDAddr[currentDPBank]);
-        __aeabi_memcpy(sdAddr, buffer, nWordsCounter << 2);
-        sdAddr = sdAddr + nWordsCounter;
-
-#if (BeamOnDBG > 0)
-        unsigned int bankID = buffer[nWordsCounter-1] & BANKIDMASK;
-        printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", buffer[nWordsCounter-1], bankID);
-        //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
-#endif
-
-        //Reset the event header
-        *(dpBankHeaderAddr[currentDPBank]) = 0;
-
-        //Update the number of words in SD
-        nWordsTotal = nWordsTotal + nWordsCounter;  //Total number of words = nWords in this event + 1 for eventID
-
-#if (BeamOnDBG > 0)
-        printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBank, eventID, nWords, nWordsTotal);
-        printf("- IRQ state: level = %u, content = %u\n\r", PIO_Get(&pinPC11), *dpIRQRevAddr);
-#if (BeamOnDBG > 1)
-        unsigned int n = sdAddr - sdStartAddr;
-        for(unsigned int i = 0; i < n; ++i) printf("-- %u: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
-#endif
-#endif
-
-        //move to next bank
-        currentDPBank = (currentDPBank + 1) & BANKIDMASK;
     }
+
+    //Now move the event ID
+    buffer[nWordsCounter++] = *(dpBankEventIDAddr[currentDPBankID]);
+    __aeabi_memcpy(currentSDAddr, buffer, nWordsCounter << 2);
+    currentSDAddr = currentSDAddr + nWordsCounter;
+
+#if (BeamOnDBG > 0)
+    unsigned int bankID = buffer[nWordsCounter-1] & BANKIDMASK;
+    printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", buffer[nWordsCounter-1], bankID);
+    //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
+#endif
+
+    //Reset the event header
+    *(dpBankHeaderAddr[currentDPBankID]) = 0;
+
+    //Update the number of words in SD
+    nWordsTotal = nWordsTotal + nWordsCounter;  //Total number of words = nWords in this event + 1 for eventID
+
+#if (BeamOnDBG > 0)
+    printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBankID, buffer[nWordsCounter-1], nWords, nWordsTotal);
+    printf("- IRQ state: level = %u, content = %u\n\r", PIO_Get(&pinPC11), *dpIRQRevAddr);
+#if (BeamOnDBG > 1)
+    unsigned int n = sdAddr - sdStartAddr;
+    for(unsigned int i = 0; i < n; ++i) printf("-- %u: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
+#endif
+#endif
+    //printf("%u     %u \n\r", buffer[nWordsCounter-1], currentDPBankID);
 
 #if (BeamOnDBG > 0)
     printf("Exiting beamOnTransfer, state = %u\n\r", state);
@@ -236,38 +227,6 @@ void beamOffTransfer(void)
 #if (BeamOffDBG > 0)
     printf("Entering beamOffTransfer function, state = %u\n\r", state);
 #endif
-
-    //Acknowledge interrupt from PC11
-    unsigned int dp_isr = PIO_GetISR(&pinPC11);
-    unsigned int dp_lev = PIO_Get(&pinPC11);
-    volatile unsigned int dummy = *dpIRQRevAddr;
-#if (BeamOffDBG > 0)
-    printf("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", dummy, dp_lev);
-#endif
-    if(dp_lev == 1) return; //only trigger on positive edge
-
-    //If it's the first entry in this spill, set state to EOS to stop beam on reading
-    if(state == BOS)
-    {
-#if (BeamOffDBG > 0)
-        printf("- First time entering beamOffTransfer in this spill, state = %u, set it to %x\n\r", state, EOS);
-#endif
-        state = EOS;
-        currentSDAddr = sdStartAddr;  //initialize SD read address
-
-#if (BeamOffDBG > 1)
-        for(unsigned int i = 0; i < nWordsTotal; ++i) printf("--- %u: %08X = %08X\n\r", i, currentSDAddr+i, *(currentSDAddr+i));
-#endif
-    }
-    else if(state == WAIT)
-    {
-#if (BeamOffDBG > 0)
-        printf("- Last time entering beamOffTransfer in this spill, state = %u, set it to %x\n\r", state, READY);
-#endif
-        if(dummy == 0xe906e907) state = READY;
-        *dpStartAddr = 0;
-        return;
-    }
 
 #if (BeamOffDBG > 0)
     printf("- Currently the SD pointer is at %08X\n\r", currentSDAddr);
@@ -288,7 +247,7 @@ void beamOffTransfer(void)
     }
 
     //Write nWords to the first word at DP
-    __aeabi_memcpy(dpStartAddr, &nWords, 4);
+    *dpStartAddr = nWords + 1;
 
 #if (BeamOffDBG > 1)
     printf("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
@@ -303,6 +262,59 @@ void beamOffTransfer(void)
     printf("- %u words left in SDRAM, state code is set to %u\n\r", nWordsTotal, state);
     printf("Leaving beamOffTransfer\n\r");
 #endif
+}
+
+void CentralDispatch(void)
+{
+#if (CDPDebug > 0)
+    printf("Entering CentralDispatch function, state = %u\n\r", state);
+#endif
+
+    //Acknowledge interrupt from PC11
+    unsigned int dp_isr = PIO_GetISR(&pinPC11);
+    unsigned int dp_lev = PIO_Get(&pinPC11);
+    volatile unsigned int cmd = *dpIRQRevAddr;
+#if (CDPDebug > 0)
+    printf("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", cmd, dp_lev);
+#endif
+    if(dp_lev == 1) return; //only trigger on positive edge
+    if(cmd == RESETCMD) myReset();
+
+    if((cmd & 0xffff0000) != 0xe9060000)
+    {
+        //printf("- Enterting condition 1\n");
+        if(state == READY)
+        {
+            state = BOS;
+            currentSDAddr = sdStartAddr;
+        }
+        currentDPBankID = cmd & 0xf;
+        beamOnTransfer();
+    }
+    else if(cmd == EOSCMD && state == BOS)
+    {
+        printf("- Enterting condition 2\n\r");
+        state = EOS;
+        currentSDAddr = sdStartAddr;
+        beamOffTransfer();
+    }
+    else if(cmd == TRANSFERCMD)
+    {
+        //printf("- Enterting condition 3\n\r");
+        if(state == EOS) beamOffTransfer();
+    }
+    else if(cmd == LASTEVTCMD)
+    {
+        printf("- Enterting condition 4\n\r");
+        if(state == EOS) beamOffTransfer();
+
+        //move to READY
+        state = READY;
+    }
+    else
+    {
+        printf("- No condition satisfied, cmd = %08x, state = %1x !!!!!\n\r", cmd, state);
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -337,15 +349,15 @@ void ConfigureDPRam()
 
     // Configure interrupt
     PIO_InitializeInterrupts(AT91C_AIC_PRIOR_LOWEST);
-    PIO_ConfigureIt(&pinPC11, (void (*)(const Pin *)) beamOffTransfer);
+    PIO_ConfigureIt(&pinPC11, (void (*)(const Pin *)) CentralDispatch);
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
     headerPos = NWORDSPERBANK;
     blkSize = NDPWORDS;
-    unsigned int csr = 0x10000000;
+    unsigned int csr = 0xffffffff;
     headerPos = 0;
-    blkSize = 0x1000;
+    blkSize = 0x708;
     /*
     while(headerPos >= NWORDSPERBANK || blkSize >= NDPWORDS)
     {
@@ -353,7 +365,7 @@ void ConfigureDPRam()
         headerPos = csr & 0xffff;
         blkSize = (csr & 0xffff0000) >> 16;
     }*/
-    printf("\n\n - Initializing DP ram, header pos = 0x%8x, blkSize = 0x%8x\n", headerPos, blkSize);
+    printf("\n - Initializing DP ram, header pos = 0x%4x, blkSize = 0x%4x\n\r", headerPos, blkSize);
 
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
@@ -396,17 +408,9 @@ int main(void)
     __aeabi_memset(dpStartAddr, NDPWORDS << 2, 0);
 
     // Set to be ready for beam
+    init();
     state = READY;
 
     // Main loop
-    while(1)
-    {
-        //If reset is issued, reset
-        if(*(dpBankHeaderAddr[0]) == 0xe906ffff) myReset();
-
-        //Enters beam on transfer
-        if(state == READY) beamOnTransfer();
-
-        //when beam off, interrupt mode will take over
-    }
+    while(1);
 }
