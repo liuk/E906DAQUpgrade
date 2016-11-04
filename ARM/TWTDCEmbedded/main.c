@@ -116,9 +116,6 @@ void init(void)
     //Read interrupt bit to clear previous interrupt state
     volatile unsigned int dummy = *dpIRQRevAddr;
 
-    //set running state to be ready for beam
-    state = BOS;
-
     //set the number of words in SDRAM to 0
     nWordsTotal = 0;
 
@@ -155,9 +152,10 @@ void beamOnTransfer(void)
 #endif
 
     //Read all the bank headers until the next finished bank
-    unsigned int header = 0;
-    while(header == 0) header = *(dpBankHeaderAddr[currentDPBankID]);
-    printf("--- %08x    %u\n\r", header, currentDPBankID);
+    //unsigned int header = 0;
+    //while(header == 0) header = *(dpBankHeaderAddr[currentDPBankID]);
+    unsigned int header = *(dpBankHeaderAddr[currentDPBankID]);
+    unsigned int eventID = *(dpBankEventIDAddr[currentDPBankID]);
 
     //extract nWords from header
 #if (ScalarMode > 0)
@@ -188,7 +186,7 @@ void beamOnTransfer(void)
     }
 
     //Now move the event ID
-    buffer[nWordsCounter++] = *(dpBankEventIDAddr[currentDPBankID]);
+    buffer[nWordsCounter++] = eventID;
     __aeabi_memcpy(currentSDAddr, buffer, nWordsCounter << 2);
     currentSDAddr = currentSDAddr + nWordsCounter;
 
@@ -282,7 +280,6 @@ void CentralDispatch(void)
 
     if((cmd & 0xffff0000) != 0xe9060000)
     {
-        //printf("- Enterting condition 1\n");
         if(state == READY)
         {
             state = BOS;
@@ -293,27 +290,27 @@ void CentralDispatch(void)
     }
     else if(cmd == EOSCMD && state == BOS)
     {
-        printf("- Enterting condition 2\n\r");
+        printf("- Received EOS, transits to beam off state \n\r");
         state = EOS;
         currentSDAddr = sdStartAddr;
         beamOffTransfer();
     }
     else if(cmd == TRANSFERCMD)
     {
-        //printf("- Enterting condition 3\n\r");
         if(state == EOS) beamOffTransfer();
     }
     else if(cmd == LASTEVTCMD)
     {
-        printf("- Enterting condition 4\n\r");
+        printf("- Received last flush, change back to READY. \n\r");
         if(state == EOS) beamOffTransfer();
 
         //move to READY
+        init();
         state = READY;
     }
     else
     {
-        printf("- No condition satisfied, cmd = %08x, state = %1x !!!!!\n\r", cmd, state);
+        printf("- No condition satisfied, cmd = 0x%08x, state = 0x%1x !!!!!\n\r", cmd, state);
     }
 }
 
