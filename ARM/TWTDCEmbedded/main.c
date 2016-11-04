@@ -24,10 +24,10 @@
 /// Size of SDRAM in bytes -- 64M - 0x10,0000 - 0x8000
 /// First 0x8000 bytes occuppied by user app, i.e. this program
 /// Last 0x100000 bytes occupied by u-boot handling the basics
-#define SDSIZE              0x03ef8000
+#define SDSIZE              0x03cf8000
 
 /// Size of SDRAM in words
-#define NSDWORDS            0x0fbe0000
+#define NSDWORDS            0x0f3e0000
 
 /// Number of data banks in Dual-port
 #define NBANKS              16
@@ -85,7 +85,7 @@ const Pin pinPC11 = {1 << 11, AT91C_BASE_PIOC, AT91C_ID_PIOC, PIO_INPUT, PIO_PUL
 // start and end address of DP and SD
 const lPTR dpStartAddr  = (lPTR)0x50000000;
 const lPTR dpEndAddr    = (lPTR)0x50010000;   //for now the upper half is not used in FPGA
-const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x20200000 taking 0x8000 bytes  --- temporary
+const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x20200000 taking 0x8000 bytes
 const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Dual-port configuration/operation address
@@ -230,6 +230,14 @@ void beamOffTransfer(void)
     printf("- Currently the SD pointer is at %08X\n\r", currentSDAddr);
 #endif
 
+    //Check if it's already completed in previous transfer, if so, write the header and set state to WAIT
+    if(nWordsTotal == 0)
+    {
+        *dpStartAddr = 0;
+        state = WAIT;
+        return;
+    }
+
     //Write as much data as possible to the DP memory, save the last 6 words for configureation and first word for word count
     unsigned int nWords = blkSize;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
@@ -239,9 +247,22 @@ void beamOffTransfer(void)
 
     //Transfer nWords words from SD to DP
     lPTR dpAddr = dpStartAddr + 1;
-    for(unsigned int i = nWords; i != 0; --i)
+    unsigned int nWordsLeft = nWords;
+    while(nWordsLeft >= BUFSIZE)
     {
-        __aeabi_memcpy(dpAddr++, currentSDAddr++, 4);
+        __aeabi_memcpy(buffer, currentSDAddr, BUFSIZE << 2);
+        currentSDAddr = currentSDAddr + BUFSIZE;
+        nWordsLeft = nWordsLeft - BUFSIZE;
+
+        __aeabi_memcpy(dpAddr, buffer, BUFSIZE << 2);
+        dpAddr = dpAddr + BUFSIZE;
+    }
+    if(nWordsLeft != 0)
+    {
+        __aeabi_memcpy(buffer, currentSDAddr, nWordsLeft << 2);
+        currentSDAddr = currentSDAddr + nWordsLeft;
+
+        __aeabi_memcpy(dpAddr, buffer, nWordsLeft << 2);
     }
 
     //Write nWords to the first word at DP
@@ -252,9 +273,8 @@ void beamOffTransfer(void)
     for(unsigned int i = 0; i <= nWords; ++i) printf("-!- %u: %08X = %08X\n\r", i, dpStartAddr+i, *(dpStartAddr+i));
 #endif
 
-    //Subtract the nWords from nWordsTotal, and reset running state to WAIT if it's all done
+    //Subtract the nWords from nWordsTotal, and reset running state to WAIT if it's all done at next entry
     nWordsTotal = nWordsTotal - nWords;
-    if(nWordsTotal == 0) state = WAIT;
 
 #if (BeamOffDBG > 0)
     printf("- %u words left in SDRAM, state code is set to %u\n\r", nWordsTotal, state);
@@ -297,6 +317,7 @@ void CentralDispatch(void)
     }
     else if(cmd == TRANSFERCMD)
     {
+        //printf("- Received one flush, state = %u, nWordsTotal = %u\n\r", state, nWordsTotal);
         if(state == EOS) beamOffTransfer();
     }
     else if(cmd == LASTEVTCMD)
@@ -335,9 +356,9 @@ void ConfigureDPRam()
     AT91C_BASE_CCFG->CCFG_EBICSA |= (AT91C_EBI_SUPPLY);
 
     // Configure SMC for CS4
-    AT91C_BASE_SMC->SMC_SETUP4 = 0x00000000;
-    AT91C_BASE_SMC->SMC_PULSE4 = 0x03020202;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
-    AT91C_BASE_SMC->SMC_CYCLE4 = 0x00050002;  // NRDCYCLE=005, NWECYCLE=002
+    AT91C_BASE_SMC->SMC_SETUP4 = 0x00010001;
+    AT91C_BASE_SMC->SMC_PULSE4 = 0x02020202;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
+    AT91C_BASE_SMC->SMC_CYCLE4 = 0x00040003;  // NRDCYCLE=005, NWECYCLE=002
     AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |
                                   AT91C_SMC_WRITEMODE  |
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
