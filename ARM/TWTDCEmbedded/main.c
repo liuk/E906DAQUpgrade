@@ -46,10 +46,12 @@
 #define EOS                 0x1       //beam is off, trasnfer from SD to DP
 #define WAIT                0x2       //transfer back is done, wait for last IRQ
 #define READY               0x3       //transfer is done, ready for next spill
+#define ERR_OVERFLOW        0xf1      //this error happens when SDRAM overflow
 
 /// Commands, upper 16-bits are fixed at 0xe906
 #define RESETCMD            0xe906000f   //This command triggers the hardware RESET
-#define EOSCMD              0xe9060001   //This command is issued on EOS, starts on beam transfer
+#define BOSCMD              0xe9060000   //This command is issued on BOS, force the system to go to READY
+#define EOSCMD              0xe9060001   //This command is issued on EOS, starts off beam transfer
 #define TRANSFERCMD         0xe9060002   //This command is issued on flush event, starts one block transfer
 #define LASTEVTCMD          0xe9060003   //This command is issued on last flush, change state to wait
 
@@ -70,7 +72,7 @@ volatile unsigned int nWordsTotal = 0;
 unsigned int headerPos = 0;
 
 /// Size of the block transfer
-unsigned int blkSize = 2000;
+unsigned int blkSize = 1800;
 
 // Address of current write/read address from SD
 volatile lPTR currentSDAddr = 0;
@@ -169,6 +171,14 @@ void beamOnTransfer(void)
     if(currentSDAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
     printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBankID, header, nWords);
 #endif
+
+    //Protection against SDRAM overflow
+    if(currentSDAddr > sdEndAddr)
+    {
+        printf("- ERROR: SDRAM overflow!!!!");
+        state = ERR_OVERFLOW;
+        return;
+    }
 
     //move the content to SDRAM, apply zero suppression, the last word is eventID
     lPTR dpAddr = dpBankStartAddr[currentDPBankID];
@@ -300,38 +310,60 @@ void CentralDispatch(void)
 
     if((cmd & 0xffff0000) != 0xe9060000)
     {
+        currentDPBankID = cmd & 0xf;
         if(state == READY)
         {
             state = BOS;
             currentSDAddr = sdStartAddr;
+            beamOnTransfer();
         }
-        currentDPBankID = cmd & 0xf;
-        beamOnTransfer();
-    }
-    else if(cmd == EOSCMD && state == BOS)
-    {
-        printf("- Received EOS, transits to beam off state \n\r");
-        state = EOS;
-        currentSDAddr = sdStartAddr;
-        beamOffTransfer();
+        else if(state == BOS)
+        {
+            beamOnTransfer();
+        }
     }
     else if(cmd == TRANSFERCMD)
     {
         //printf("- Received one flush, state = %u, nWordsTotal = %u\n\r", state, nWordsTotal);
         if(state == EOS) beamOffTransfer();
     }
+    else if(cmd == BOSCMD)
+    {
+        printf("- INFO: Received BOS, transits to beam on state \n\r");
+        if(state != READY)
+        {
+            printf("- ERROR: Off beam transfer not completed for previous spill, force state from 0x%x to READY \n\r", state);
+            init();
+            state = READY;
+        }
+    }
+    else if(cmd == EOSCMD)
+    {
+        printf("- INFO: Received EOS, transits to beam off state \n\r");
+        if(state == BOS || state == ERR_OVERFLOW)
+        {
+            state = EOS;
+            currentSDAddr = sdStartAddr;
+            beamOffTransfer();
+        }
+    }
     else if(cmd == LASTEVTCMD)
     {
-        printf("- Received last flush, change back to READY. \n\r");
+        printf("- INFO: Received last flush, change back to READY. \n\r");
         if(state == EOS) beamOffTransfer();
 
         //move to READY
         init();
         state = READY;
     }
+    else if((cmd & 0xe9068000) == 0xe9068000)
+    {
+        blkSize = cmd & 0x7fff;
+        printf("INFO: Set the flush event block size to %d\n\r", blkSize);
+    }
     else
     {
-        printf("- No condition satisfied, cmd = 0x%08x, state = 0x%1x !!!!!\n\r", cmd, state);
+        printf("- ERROR: No condition satisfied, cmd = 0x%08x, state = 0x%1x !!!!!\n\r", cmd, state);
     }
 }
 
@@ -371,19 +403,9 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
-    headerPos = NWORDSPERBANK;
-    blkSize = NDPWORDS;
-    unsigned int csr = 0xffffffff;
     headerPos = 0;
     blkSize = 0x708;
-    /*
-    while(headerPos >= NWORDSPERBANK || blkSize >= NDPWORDS)
-    {
-        csr = *dpCtrlRegAddr;
-        headerPos = csr & 0xffff;
-        blkSize = (csr & 0xffff0000) >> 16;
-    }*/
-    printf("\n - Initializing DP ram, header pos = 0x%4x, blkSize = 0x%4x\n\r", headerPos, blkSize);
+    printf("- Initializing DP ram, header pos = 0x%x, blkSize = %d\n\r", headerPos, blkSize);
 
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
