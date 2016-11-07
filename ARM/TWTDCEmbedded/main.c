@@ -21,6 +21,9 @@
 /// Size of the temp buffer
 #define BUFSIZE             512
 
+/// Size of the temp buffer in bytes
+#define BUFSIZEB            2048
+
 /// Size of SDRAM in bytes -- 64M - 0x10,0000 - 0x8000
 /// First 0x8000 bytes occuppied by user app, i.e. this program
 /// Last 0x100000 bytes occupied by u-boot handling the basics
@@ -154,8 +157,6 @@ void beamOnTransfer(void)
 #endif
 
     //Read all the bank headers until the next finished bank
-    //unsigned int header = 0;
-    //while(header == 0) header = *(dpBankHeaderAddr[currentDPBankID]);
     unsigned int header = *(dpBankHeaderAddr[currentDPBankID]);
     unsigned int eventID = *(dpBankEventIDAddr[currentDPBankID]);
 
@@ -260,11 +261,11 @@ void beamOffTransfer(void)
     unsigned int nWordsLeft = nWords;
     while(nWordsLeft >= BUFSIZE)
     {
-        __aeabi_memcpy(buffer, currentSDAddr, BUFSIZE << 2);
+        __aeabi_memcpy(buffer, currentSDAddr, BUFSIZEB);
         currentSDAddr = currentSDAddr + BUFSIZE;
         nWordsLeft = nWordsLeft - BUFSIZE;
 
-        __aeabi_memcpy(dpAddr, buffer, BUFSIZE << 2);
+        __aeabi_memcpy(dpAddr, buffer, BUFSIZEB);
         dpAddr = dpAddr + BUFSIZE;
     }
     if(nWordsLeft != 0)
@@ -311,14 +312,14 @@ void CentralDispatch(void)
     if((cmd & 0xffff0000) != 0xe9060000)
     {
         currentDPBankID = cmd & 0xf;
-        if(state == READY)
+        if(state == BOS)
+        {
+            beamOnTransfer();
+        }
+        else if(state == READY)
         {
             state = BOS;
             currentSDAddr = sdStartAddr;
-            beamOnTransfer();
-        }
-        else if(state == BOS)
-        {
             beamOnTransfer();
         }
     }
@@ -359,7 +360,7 @@ void CentralDispatch(void)
     else if((cmd & 0xe9068000) == 0xe9068000)
     {
         blkSize = cmd & 0x7fff;
-        printf("INFO: Set the flush event block size to %d\n\r", blkSize);
+        printf("- INFO: Set the flush event block size to %d\n\r", blkSize);
     }
     else
     {
@@ -389,8 +390,8 @@ void ConfigureDPRam()
 
     // Configure SMC for CS4
     AT91C_BASE_SMC->SMC_SETUP4 = 0x00010001;
-    AT91C_BASE_SMC->SMC_PULSE4 = 0x02020202;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
-    AT91C_BASE_SMC->SMC_CYCLE4 = 0x00040003;  // NRDCYCLE=005, NWECYCLE=002
+    AT91C_BASE_SMC->SMC_PULSE4 = 0x03010301;  // NCS_RD=0x03, NRD=0x02, NCS_WR=Ox02, NWE=0x02
+    AT91C_BASE_SMC->SMC_CYCLE4 = 0x00030003;  // NRDCYCLE=005, NWECYCLE=002
     AT91C_BASE_SMC->SMC_CTRL4  = (AT91C_SMC_READMODE   |
                                   AT91C_SMC_WRITEMODE  |
                                   AT91C_SMC_NWAITM_NWAIT_DISABLE |
@@ -404,8 +405,8 @@ void ConfigureDPRam()
 
     //Start/end address of each DP memory bank
     headerPos = 0;
-    blkSize = 0x708;
-    printf("- Initializing DP ram, header pos = 0x%x, blkSize = %d\n\r", headerPos, blkSize);
+    blkSize = 1800;
+    printf("- INIT: Initializing DP ram, header pos = 0x%x, blkSize = %d\n\r", headerPos, blkSize);
 
     for(unsigned int i = 0; i < NBANKS; ++i)
     {
