@@ -404,7 +404,11 @@ void ConfigureDPRam()
     PIO_EnableIt(&pinPC11);
 
     //Start/end address of each DP memory bank
+#if (ScalarMode == 0)
     headerPos = 0;
+#else
+    headerPos = 48;
+#endif
     blkSize = 1800;
     printf("- INIT: Initializing DP ram, header pos = 0x%x, blkSize = %d\n\r", headerPos, blkSize);
 

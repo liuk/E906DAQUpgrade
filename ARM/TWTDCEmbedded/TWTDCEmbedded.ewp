@@ -187,7 +187,7 @@
           <state>BeamOnDBG=0</state>
           <state>BeamOffDBG=0</state>
           <state>CDPDebug=0</state>
-          <state>ScalarMode=0</state>
+          <state>ScalarMode=1</state>
         </option>
         <option>
           <name>CCPreprocFile</name>
