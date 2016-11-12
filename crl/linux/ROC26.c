@@ -261,12 +261,12 @@ void rocTrigger(int arg)
   	        dma_dabufp += nWords;
   	      }
         }
+      }
 
-        if(nFlushes < NFlushMax) {
-          DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
-        } else {
-          DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
-        }
+      if(nFlushes < NFlushMax) {
+        DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
+      } else {
+        DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
       }
     }
   }
