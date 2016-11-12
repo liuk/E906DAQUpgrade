@@ -62,7 +62,7 @@ struct Read_reg_struct{
 
 struct Read_dp_data {
   volatile unsigned int dp[DP_BUF_SIZE];
-}
+};
 
 struct Read_scalar_struct{
   volatile unsigned int scalar[512];             // 0x000  Control and Status Register

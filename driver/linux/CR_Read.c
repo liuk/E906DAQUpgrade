@@ -314,8 +314,8 @@ void DP_init(int id, int dp_start, int dp_end)
 {
   int idata;
 
-  vmeWrite32(&CP_p[id]->reg[6], 0);
-  vmeWrite32(&CP_p[id]->reg[7], 0);
+  vmeWrite32(&CR_p[id]->reg[6], 0);
+  vmeWrite32(&CR_p[id]->reg[7], 0);
 
   for(idata = dp_start; idata <= dp_end; ++idata) {
     vmeWrite32(&CR_dp[id]->dp[idata], 0);
@@ -330,7 +330,7 @@ void DP_Write(int id, int value, int dp_start, int dp_end)
   }
 }
 
-void DP_Read(int id, int idata)
+int DP_Read(int id, int idata)
 {
   return vmeRead32(&CR_dp[id]->dp[idata]);
 }
