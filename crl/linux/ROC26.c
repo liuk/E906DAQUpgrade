@@ -52,6 +52,7 @@ void Clear64Init()
 const int TDC_ScalarON = 1;
 const int NTDC = 6;
 const int NFlushMax = 9000;
+const int blkSize = 300;
 
 int event_no;
 int event_ty;
@@ -108,7 +109,7 @@ void rocPrestart()
   *rol->dabufp++ = rol->pid;
   for(ii = 0; ii < NTDC; ii++) {
     *rol->dabufp++ = 0xe906f011; //FEE event flag
-    *rol->dabufp++ = TDCBoardID + 0x1000000*ii + TDCHardID[ii];  //Board ID
+    *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
 
     CR_Reset(ii);
     *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
@@ -134,10 +135,10 @@ void rocGo()
 {
   /* Enable modules, if needed, here */
   BeamOn = 1;
+  for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
   for(ii = 0; ii < NTDC; ii++) {
     vmeWrite32(&CR_p[ii]->reg[1], csr);
-    DP_Write(ii, 0xe9068708, 0x7ffe, 0x7ffe);
-    CR_WR_Reg(ii, 7, 0);
+    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);
     CR_TrigEnable(ii);
     if(TDC_ScalarON == 1) {
       CR_ScalarDisplay(ii, 1);//show buffer0 (should be empty at go)
@@ -191,10 +192,11 @@ void rocTrigger(int arg)
       // data scaler flag=3, ignore = 0, latch=1, tdc=2,dsTDC2 flag=4, v1495=5,ZStdc=6,noZSWC=7,ZSWC=8,
       //  Run2TDC= 10, Run2TDC header = 11                                                            ,
       *dma_dabufp++ = LSWAP(0xe906f010); // run2 TDC
+      *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24));
 
       if(PerEventRead == 1) {
         maxWords = 257;
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000 + DP_Bank;
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank;
 
         tmpaddr1 = dma_dabufp;
         tmpaddr2 = DMAaddr;
@@ -217,7 +219,7 @@ void rocTrigger(int arg)
 	      }
 	    }//retVal <0
       } else {
-        *dma_dabufp++ = LSWAP(DP_Read(ii, DP_Bank >> 2));
+        *dma_dabufp++ = LSWAP(vmeRead32(&CR_d[ii]->data[0]));
       }
     }//for NTDC
 
@@ -237,10 +239,12 @@ void rocTrigger(int arg)
 
     for(ii = 0; ii < NTDC; ++ii) {
       Cnt = DP_Read(ii, 0);
-      DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000;
-      *dma_dabufp++ = LSWAP(TDCBoardID + 0x1000000*ii + Cnt);
+      DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+      *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24) + Cnt);
 
-      if(Cnt > 0) {
+      if(Cnt > 0 && Cnt < blkSize + 10) {
+        //printf("Will transfer %d words from TDC %d\n", Cnt, ii);
+
         tmpaddr1 = dma_dabufp;
         tmpaddr2 = DMAaddr;
         if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *dma_dabufp++ = LSWAP(0xe906e906);
@@ -277,9 +281,9 @@ void rocTrigger(int arg)
 void rocDone()
 {
   if(event_ty == 14 || event_ty == 11) {
-    for(ii = 0; ii < NTDC; ii++) CR_HeaderInit(ii, csr); //Clear header (trigger word)
-    for(ii = 0; ii < NTDC; ii++) CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
+    //for(ii = 0; ii < NTDC; ii++) CR_HeaderInit(ii, csr); //Clear header (trigger word)
     for(ii = 0; ii < NTDC; ii++) CR_WR_Reg(ii,7, event_no);
+    for(ii = 0; ii < NTDC; ii++) CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
   }
 }
 

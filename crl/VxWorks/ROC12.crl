@@ -14,7 +14,8 @@ ts control
 const TDC_ScalarON = 1
 const NTDC = 6
 const TIR_ADDR = 0x0ed0
-const NFlushMax = 9350
+const NFlushMax = 9000
+const blkSize = 300
 
 # Define tsP pointer even if there is no TS in the Crate
 struct vme_ts2 *tsP;
@@ -78,7 +79,7 @@ begin prestart
 
     for(ii = 0; ii < NTDC; ii++) {
       *rol->dabufp++ = 0xe906f011; //FEE event flag
-      *rol->dabufp++ = TDCBoardID + 0x1000000*ii + TDCHardID[ii];  //Board ID
+      *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
 
       CR_Reset(ii);
       *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
@@ -130,10 +131,10 @@ begin go
 
 %%
   BeamOn = 1;
+  for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
   for(ii = 0; ii < NTDC; ii++) {
     CR_p[ii]->reg[1] = csr;
-    DP_Write(ii, 0xe9068708, 0x7ffe, 0x7ffe);   //set control registers
-    CR_WR_Reg(ii, 7, 0);
+    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);   //set control registers
     CR_FastTrigEnable(ii, csr);
 	if(TDC_ScalarON == 1) {
 	  CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
@@ -172,11 +173,12 @@ begin trigger usrtrig
       // data scaler flag=3, ignore=0, latch=1, tdc=2, dsTDC2 flag=4, v1495=5, ZStdc=6, noZSWC=7, ZSWC=8,
       // Run2TDC= 10, Run2TDC header = 11                                                            ,
       *rol->dabufp++ = 0xe906f010; // run2 TDC
+      *rol->dabufp++ = TDCBoardID + (ii << 24);
 
       //Per-event readout
       if(PerEventRead == 1) {
         maxWords = 257;	/// normal data taking
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000 + DP_Bank;      /// normal data taking
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank;      /// normal data taking
 
         tmpaddr1 = rol->dabufp;
         tmpaddr2 = DMAaddr;
@@ -199,7 +201,7 @@ begin trigger usrtrig
           }
         }//retVal < 0
       } else {
-        *rol->dabufp++ = DP_Read(ii, DP_Bank >> 2);
+        *rol->dabufp++ = CR_d[ii]->data[0];
       }
     }//for NTDC
     //Finalize
@@ -219,10 +221,12 @@ begin trigger usrtrig
 
     for(ii = 0; ii < NTDC; ++ii) {
       Cnt = DP_Read(ii, 0);
-      *rol->dabufp++ = (((TDCBoardID + 0x1000000*ii) & 0xffff0000) + Cnt);  //boardid, numwords
+      *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
 
-      if(Cnt > 0) {
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000;
+      if(Cnt > 0 && Cnt < blkSize + 10) {
+        //logMsg("Will transfer %d words from TDC %d\n", Cnt, ii);
+
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
         tmpaddr1 = rol->dabufp;
         tmpaddr2 = DMAaddr;
         if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *rol->dabufp++ = 0xe906e906;
@@ -263,10 +267,10 @@ end done
 begin done
 %%
   if(event_ty == 14 || event_ty == 11) {
+    for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
     for(ii = 0; ii < NTDC; ii++) {
-       CR_HeaderInit(ii, csr);    //Clear header (trigger word)
+       //CR_HeaderInit(ii, csr);    //Clear header (trigger word)
        CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
-       CR_WR_Reg(ii, 7, event_no);
     }
   }
 %%

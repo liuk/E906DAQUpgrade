@@ -16,6 +16,7 @@ const NTDC = 6
 const TIR_ADDR = 0x0ed0
 const SL_ADDR = 0x0f000000
 const NFlushMax = 9000
+const blkSize = 300
 
 # Define tsP pointer even if there is no TS in the Crate
 struct vme_ts2 *tsP;
@@ -79,7 +80,7 @@ begin prestart
 
   for(ii = 0; ii < NTDC; ii++) {
     *rol->dabufp++ = 0xe906f011; //FEE event flag
-    *rol->dabufp++ = TDCBoardID + 0x1000000*ii + TDCHardID[ii];  //Board ID
+    *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
 
     CR_Reset(ii);
     *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
@@ -135,10 +136,12 @@ begin go
 
 %%
   BeamOn = 1;
+  for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
+  SL_WR_Reg(7, 0);
+
   for(ii = 0; ii < NTDC; ii++) {
     CR_p[ii]->reg[1] = csr;
-    DP_Write(ii, 0xe9068708, 0x7ffe, 0x7ffe);   //set control registers
-    CR_WR_Reg(ii, 7, 0);
+    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);   //set control registers
     CR_FastTrigEnable(ii, csr);
 	  if(TDC_ScalarON == 1) {
 	    CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
@@ -146,8 +149,7 @@ begin go
 	  }
   }
   SL_DataInit();
-  SL_DP_Write(0xe9068708, 0x7ffe, 0x7ffe);
-  SL_WR_Reg(7, 0);
+  SL_DP_Write(0xe9068000 + blkSize, 0x7ffe, 0x7ffe);
 %%
 
   log inform "Finish User Go"
@@ -183,8 +185,9 @@ begin trigger usrtrig
       // Run2TDC= 10, Run2TDC header = 11
       if(ii < NTDC) {
         maxWords = 257;
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000 + DP_Bank;
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank;
         *rol->dabufp++ = 0xe906f010; // run2 TDC
+        *rol->dabufp++ = TDCBoardID + (ii << 24);
       } else {
         maxWords = 48;
         DMAaddr = SL_ADDR + 0x800;
@@ -214,7 +217,7 @@ begin trigger usrtrig
           }
         }//retVal < 0
       } else {
-        *rol->dabufp++ = DP_Read(ii, DP_Bank >> 2);
+        *rol->dabufp++ = CR_d[ii]->data[0];
       }
     }//for NTDC
 
@@ -241,17 +244,17 @@ begin trigger usrtrig
       if(ii == NTDC) {
         *rol->dabufp++ = 0xe906f01b;
         Cnt = SL_DP_Read(0);
-        DMAaddr = SL_ADDR + 0x800;
+        DMAaddr = SL_ADDR + 0x20000;
         *rol->dabufp++ = (SL_ADDR & 0xffff0000) + Cnt;
       } else {
         Cnt = DP_Read(ii, 0);
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000;
-        *rol->dabufp++ = (((TDCBoardID + 0x1000000*ii) & 0xffff0000) + Cnt);  //boardid, numwords
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+        *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
       }
-      //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
 
-      if(Cnt > 0) {
-        logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
+      if(Cnt > 0 && Cnt < blkSize + 10) {
+        //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
+
         tmpaddr1 = rol->dabufp;
         tmpaddr2 = DMAaddr;
         if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *rol->dabufp++ = 0xe906e906;
@@ -276,13 +279,13 @@ begin trigger usrtrig
         if(ii < NTDC) {
           DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
         } else {
-          SL_DP_Write(0xe9060002,0x7ffe,0x7ffe);
+          SL_DP_Write(0xe9060002, 0x7ffe,0x7ffe);
         }
       } else {
         if(ii < NTDC) {
           DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
         } else {
-          SL_DP_Write(0xe9060003,0x7ffe, 0x7ffe);
+          SL_DP_Write(0xe9060003, 0x7ffe, 0x7ffe);
         }
       }
     }
@@ -300,13 +303,13 @@ end done
 begin done
 %%
   if(event_ty == 14 || event_ty == 11) {
+    for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
+    SL_WR_Reg(7, event_no);
     for(ii = 0; ii < NTDC; ii++) {
-       CR_HeaderInit(ii, csr); //Clear header (trigger word)
+       //CR_HeaderInit(ii, csr); //Clear header (trigger word)
        CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
-       CR_WR_Reg(ii, 7, event_no);
     }
     SL_Scalar_Switch(0);
-    SL_WR_Reg(7, event_no);
   }
 %%
 
