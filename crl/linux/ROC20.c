@@ -53,11 +53,13 @@ const int TDC_ScalarON = 1;
 const int NTDC = 6;
 const int NFlushMax = 9000;
 const int blkSize = 300;
+const int PerEventRead = 2;
 
 int event_no;
 int event_ty;
 int ii;
 
+int ARM_enable = 1;
 int UP_Limit = 454;
 int Low_Limit = 428;
 int TDCHardID[6] = {125, 77, 78, 79, 80, 81};
@@ -71,7 +73,7 @@ int TDCSetup;
 
 int nFlushes = 0;
 int BeamOn = 1;
-int PerEventRead = 0;
+int busyFlag[NTDC];
 
 void rocDownload()
 {
@@ -103,8 +105,8 @@ void rocPrestart()
   UEOPEN(132, BT_UI4, 0);
 
   /* Program/Init VME Modules Here */
-  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31);
-  CR_Init(0x09000000, 0x1000000, NTDC);
+  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31) + (ARM_enable << 27);
+  CR_Init(TDCBoardID, 0x1000000, NTDC);
 
   *rol->dabufp++ = rol->pid;
   for(ii = 0; ii < NTDC; ii++) {
@@ -164,8 +166,9 @@ void rocEnd()
 
 void rocTrigger(int arg)
 {
-  int ii, retVal, maxWords, nWords, remBytes;
+  int ii, jj, retVal, maxWords, nWords, remBytes;
   int Cnt, totalDMAwords;
+  int ARMbusy, busyLoop;
   int DP_Bank;
   unsigned int* DMAaddr;
   long tmpaddr1, tmpaddr2;
@@ -181,22 +184,23 @@ void rocTrigger(int arg)
   *dma_dabufp++ = LSWAP(0xe9060000);
 
   if(event_ty == 14 && BeamOn == 1) { //Physics event
-    DP_Bank = (event_no - 1) & 0xf;
+    DP_Bank = ((event_no - 1) & 0xf) << 10;
     for(ii = 0; ii < NTDC; ii++){
       CR_FastTrigDisable(ii, csr); //when trigger arrives at TDC, disable further trigger input
-      DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
+      busyFlag[ii] = 1;
+      //DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
     }
 
-    DP_Bank = DP_Bank << 12;
     for(ii = 0; ii < NTDC; ii++) {
       // data scaler flag=3, ignore = 0, latch=1, tdc=2,dsTDC2 flag=4, v1495=5,ZStdc=6,noZSWC=7,ZSWC=8,
       //  Run2TDC= 10, Run2TDC header = 11                                                            ,
       *dma_dabufp++ = LSWAP(0xe906f010); // run2 TDC
       *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24));
+      *dma_dabufp++ = LSWAP(event_no - 1);
 
       if(PerEventRead == 1) {
         maxWords = 257;
-        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank;
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + (DP_Bank << 2);
 
         tmpaddr1 = dma_dabufp;
         tmpaddr2 = DMAaddr;
@@ -218,10 +222,25 @@ void rocTrigger(int arg)
 	        dma_dabufp += nWords;
 	      }
 	    }//retVal <0
-      } else {
+      } else if(PerEventRead == 2) {
         *dma_dabufp++ = LSWAP(vmeRead32(&CR_d[ii]->data[0]));
+        //for(jj = 0; jj < 16; ++jj) *dma_dabufp++ = LSWAP(DP_Read(ii, jj << 10));
       }
     }//for NTDC
+
+    //Wait for the interupt to be over
+    ARMbusy = 1;
+    busyLoop = 0;
+    while(ARMbusy > 0 && busyLoop < 50) {
+      ARMbusy = 0;
+      ++busyLoop;
+      for(ii = 0; ii < NTDC; ++ii) {
+        if(busyFlag[ii] == 0) continue;
+
+        busyFlag[ii] = ((DP_Read(ii, DP_Bank) & 0x80000000) >> 31);
+        ARMbusy = ARMbusy + busyFlag[ii];
+      }
+    }
 
     *dma_dabufp++ = LSWAP(0xe906c0da);
   } else if(event_ty == 12) { //EOS event

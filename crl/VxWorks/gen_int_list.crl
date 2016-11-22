@@ -1,151 +1,194 @@
-#  Source for generic VME readout using a
-#  TJNAF trigger supervisor interface register (TIR)
-#  as a source for external interrupts
 #
-#    David Abbott, TJNAF 1996
+#  General User readout list, for testing
+#
+#    David Abbott, TJNAF 2000
 
-readout list VME1
-
-# maximum <buffer size per event(in bytes)> <number of buffer to create>
+readout list GEN_USER
 maximum 51200,2000
-vme readout
-ts control
+general readout
 
 const TDC_ScalarON = 1
-const NTDC = 6
-const TIR_ADDR = 0x0ed0
-const NFlushMax = 9000
-const blkSize = 300
-const PerEventRead = 2
+const NTDC = 1
+const TRIG_ADDR = 0x2800
+const TRIG_INPUT = 13
+const S3610_MODE = 2
+const NFlushMax = 2000
+const blkSize = 1000
 
-# Define tsP pointer even if there is no TS in the Crate
-struct vme_ts2 *tsP;
-extern unsigned int vxTicks;
 int event_no;
 int event_ty;
 extern int bigendian_out;
+extern unsigned int vxTicks;
 int ii;
 
 %%
 int ARM_enable = 1;
-int UP_Limit = 430;
-int Low_Limit = 375;
-int TDCHardID[7] = {50, 51, 52, 53, 54, 55, 56};
+int UP_Limit = 200;
+int Low_Limit = 50;
 
 int TDCBoardID = 0x09000000;
 int csr = 0xffff0060;  // csr = 0xffff0060 /rising edge;  0xffff0160 /both edge / 2048ns /only 1 buffer
 int MultiHitSetup = 0x0;
-int TimeWindowOn = 1;
+int TimeWindowOn = 0;
 int LimitReg;
 int TDCSetup;
 
 int nFlushes = 0;
-int BeamOn = 1;
+int PerEventRead = 0;
 int busyFlag[NTDC];
+
+int TESTrun = 3;
 %%
 
 begin download
-  variable res
 
-  # If the ROC is sending data to Little-Endian EB
-  # e.g. a x86 Linux CPU then bigendian_out = 0.
-  # Unless the ROC is also running on a Little-Endian
-  # machine. Then set bigendian_out=1.
+  s3610Init(TRIG_ADDR, 0, 0);
+
+  # When sending to a Linux Host set bigendian_out = 0
   bigendian_out = 0;
 
-  # Setup TIR
-  tirInit(TIR_ADDR);
-
+%%
+  //TW-TDC init
   LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31) + (ARM_enable << 27);
   CR_Init(TDCBoardID, 0x1000000, NTDC);
 
-  log inform "User Download TIR Executed"
+  for(ii = 0; ii < NTDC; ii++) {
+	CR_Reset(ii);
+    DP_Init(ii, 0, 0x3fff);
+	CR_WR_Reg(ii, 5, LimitReg);      //set low limit = 0x100
+    CR_WR_Reg(ii, 3, MultiHitSetup); //turn off MultiHit Elimination
+    CR_WR_Reg(ii, 6, 0);             //turn off test mode
+  }
+
+  //v1495 pulser init
+  v1495PulserInit(0x04400000, 0, 1);
+  v1495_RunMode_Start(0);            //wait until v1495_Exit signal;
+  v1495_PulseMode_MultiHit(0, 0, 0); //setup for only one hit
+
+  if(TESTrun == 1) {
+	v1495_PulseMode_Rotate(0);  //test#1
+	v1495_Trig_Setup(0, 200);   //trigger setup. trigger fixed in ncycle  //test1
+  } else if(TESTrun == 2) {
+	v1495_PulseMode_MultiHit(0, 0, 0); //test#2
+	v1495_Trig_Setup(0, 0);            // trigger setup. trigger fixed in n+128 (n=0~95) cycle //test#2
+  } else if(TESTrun == 3) {
+	v1495_PulseMode_MultiHit(0, 3, 2); //5 pulses, 4 cycles//test#3
+	v1495_Trig_Setup(0, 100);          // trigger setup. trigger fixed in ncycle  //test#3
+    v1495_T2P_Setup(0, 1);
+  } else if(TESTrun == 4) {
+	v1495_PulseMode_MultiHit(0, 7, 8); //8 pulses, 10 cycles//test#4.1
+	v1495_Trig_Setup(0, 200);          // trigger setup. trigger fixed in ncycle  //test#4
+  } else if(TESTrun == 5) {
+    v1495_PulseMode_MultiHit(0, 3, 2); //4 pulses, 4 cycles//test#5
+	v1495_Trig_Setup(0, 200);          // trigger setup. trigger fixed in ncycle  //test#5
+    for(ii = 0; ii < NTDC; ii++) {
+	  MultiHitSetup = 0x00840000;
+      CR_WR_Reg(ii, 3, 0x00840000);
+	}
+  } else if(TESTrun == 6) {
+	v1495_PulseMode_MultiHit(0, 7, 8); //8 pulses, 10 cycles//test#4.1
+	v1495_Trig_Setup(0, 200);          // trigger setup. trigger fixed in ncycle  //test#4
+    for(ii = 0; ii < NTDC; ii++) {
+	  MultiHitSetup = 0x00d40000;
+	  CR_WR_Reg(ii, 3, MultiHitSetup);
+	}
+  } else if(TESTrun == 7) {
+	v1495_PulseMode_MultiHit(0, 0, 0); //1 pulses
+	v1495_Trig_Setup(0, 200);          // trigger setup. trigger fixed in ncycle
+  }///end if test run
+
+  TDCSetup = (csr & 0x0000ffff) + (MultiHitSetup & 0xffff0000);
+
+  v1495_Enable_AllCh(0);
+  v1495_PulserStatus(0);
+%%
+
+  log inform "User Download Executed"
 end download
 
 begin prestart
-  log inform "User Prestart TIR Executed"
-  log inform "Entering User Trigger Prestart"
+  log inform "Entering User Prestart"
 
-  init trig source VME
-  link async trig source VME 1 to usrtrig and usrtrig_done
-  event type 1 then read VME 1
+  init trig source GEN
+  link async trig source GEN S3610_MODE to usrtrig and usrtrig_done
+  event type 1 then read GEN S3610_MODE
 
-  log inform "Ending TIR Prestart"
+  log inform "User Prestart Executed"
+  log inform "Send PreStart Info Event"
 
-  rol->dabufp = (long *) 0;
+  rol->dabufp = (long*)0;
   UEOPEN(132, BT_UI4, 0);
 
-  %%
-    //start FEE event
-    *rol->dabufp++ = rol->pid;
+%%
+  for(ii = 0; ii < NTDC; ++ii) {
+    //FEE event info
+    *rol->dabufp++ = 0xe906f011;
+    *rol->dabufp++ = TDCBoardID + (0x1000000*ii);
+    *rol->dabufp++ = csr;
+    *rol->dabufp++ = MultiHitSetup;
+    *rol->dabufp++ = LimitReg;
 
-    for(ii = 0; ii < NTDC; ii++) {
-      *rol->dabufp++ = 0xe906f011; //FEE event flag
-      *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
+    DP_Write(ii, 0, 0x7ffa, 0x7ffa);      //write header position
+    DP_Write(ii, 0xe906ffff, 0, 0x400);   //reset ARM
+    CR_WR_Reg(ii, 7, 0);                  //point the bankID to the first one
 
-      CR_Reset(ii);
-      *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
-      *rol->dabufp++ = MultiHitSetup;
-      *rol->dabufp++ = LimitReg;
-      CR_WR_Reg(ii, 5, LimitReg);
-      CR_WR_Reg(ii, 3, MultiHitSetup); //turn off MultiHit Elimination
-      CR_WR_Reg(ii, 6, 0);
-      DP_Write(ii, 0xe906000f, 0x7ffe, 0x7ffe); // reset ARM
-
-      if(TDC_ScalarON==1) {
-        CR_Scalar_Switch(ii, 1);
-        CR_ScalarInit(ii, 1);
-        CR_ScalarInit(ii, 0);
-      }
-    }  //for ntdc
-  %%
+    CR_Reset(ii);
+    CR_WR_Reg(ii, 5, LimitReg);
+    CR_WR_Reg(ii, 3, MultiHitSetup);
+    CR_WR_Reg(ii, 6, 0);
+    DP_Write(ii, 0xe906000f, 0x7ffe, 0x7ffe);
+    if(TDC_ScalarON == 1) {
+	  CR_Scalar_Switch(ii, 1);
+	  CR_ScalarInit(ii, 1);
+   	  CR_ScalarInit(ii, 0);
+    }
+  }
+%%
 
   UECLOSE;
-  log inform "Prestart Done."
 end prestart
 
 begin end
-  variable trig_count
 
 %%
   for(ii = 0; ii < NTDC; ii++) {
-    CR_FastTrigDisable(ii, csr);
+	CR_TrigDisable(ii);
     if(TDC_ScalarON == 1) {
-      CR_Scalar_Switch(ii, 1); //using buffer0, so set pointer to buffer1 to stop writing to buffer0
-      CR_ScalarDisplay(ii, 0); //show buffer0
+      CR_Scalar_Switch(ii, 1);
+      CR_ScalarDisplay(ii, 0);
     }
-}
+  }
 %%
 
-  # Get Final Trigger Count
-  CDODISABLE(VME, 1, 0);
-  log inform "User End Executed VME TIR"
+  log inform "User End Executed"
+  CDODISABLE(GEN, S3610_MODE, TRIG_INPUT);
 end end
 
 begin pause
   log inform "User Pause Executed"
-  CDODISABLE(VME, 1, 0);
+  CDODISABLE(GEN, S3610_MODE, TRIG_INPUT);
 end pause
 
 begin go
-  CDOENABLE(VME, 1, 0);
   log inform "Entering User Go"
+  CDOENABLE(GEN, S3610_MODE, TRIG_INPUT);
+  s3610Status(0, 0);
 
 %%
-  BeamOn = 1;
   for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
   for(ii = 0; ii < NTDC; ii++) {
     CR_p[ii]->reg[1] = csr;
-    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);   //set control registers
-    CR_FastTrigEnable(ii, csr);
-	  if(TDC_ScalarON == 1) {
-	    CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
-	    CR_Scalar_Switch(ii, 0); //set pointer to buffer0 to start filling
-	  }
+    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);
+    CR_TrigEnable(ii);
+    if(TDC_ScalarON == 1) {
+ 	  CR_Scalar_Switch(ii, 0);
+ 	  CR_ScalarDisplay(ii, 0);
+ 	}
   }
+  v1495_ExternalPulser(0);
 %%
 
-  log inform "Finish User Go"
+  log inform "Finished User Go"
 end go
 
 begin trigger usrtrig
@@ -162,10 +205,12 @@ begin trigger usrtrig
   open event type EVTYPE of BT_UI4
   open bank EVTYPE of BT_UI4
 
-  *rol->dabufp++ = vxTicks;
+  ## turn sis3610 the BUSY on
+  s3610WriteBits(0, 1);
 
+  *rol->dabufp++ = vxTicks;
 %%
-  if(event_ty == 14 && BeamOn == 1) {  //Physics event
+  if(event_ty == 2) {  //Physics event
     DP_Bank = ((event_no - 1) & 0xf) << 10;
     for(ii = 0; ii < NTDC; ii++) {
       CR_FastTrigDisable(ii, csr);//when trigger arrives at TDC, disable further trigger input
@@ -183,7 +228,7 @@ begin trigger usrtrig
       //Per-event readout
       if(PerEventRead == 1) {
         maxWords = 257;	/// normal data taking
-        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank;      /// normal data taking
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + DP_Bank << 2;      /// normal data taking
 
         tmpaddr1 = rol->dabufp;
         tmpaddr2 = DMAaddr;
@@ -198,14 +243,14 @@ begin trigger usrtrig
           if(remBytes < 0) {                    //Error
             logMsg("ERROR during DMA transfer 0x%x\n", remBytes);
             *rol->dabufp++ = 0xda020bad;
-          } else if(remBytes == 0) {        //Transfer completed //
+          } else if(remBytes == 0) {          //Transfer completed //
             rol->dabufp += maxWords;
           } else {                            //Transfer Terminated
             nWords = maxWords - (remBytes >> 2);
             rol->dabufp += nWords;
           }
         }//retVal < 0
-      } else if(PerEventRead == 2) {
+      } else {
         *rol->dabufp++ = CR_d[ii]->data[0];
         //for(jj = 0; jj < 16; ++jj) *rol->dabufp++ = DP_Read(ii, jj << 10);
       }
@@ -227,16 +272,11 @@ begin trigger usrtrig
 
     //Finalize
     *rol->dabufp++ = 0xe906c0da;
-  } else if(event_ty == 12) {    //EOS event
+  } else if(event_ty == 6) {    //EOS event
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
     nFlushes = 0;
-    BeamOn = 0;
     logMsg("Received EOS event! Will start off-beam transfer...\n");
-  } else if(event_ty == 11) {   //BOS event
-    BeamOn = 1;
-    for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060000, 0x7ffe, 0x7ffe);
-    logMsg("Received BOS event! Will start on-beam transfer...\n");
-  } else if(event_ty == 10 && nFlushes < NFlushMax && BeamOn == 0) {
+  } else if(event_ty == 10 && nFlushes < NFlushMax) {
     //logMsg("Flush event received! Read DP ... ");
     ++nFlushes;
     *rol->dabufp++ = 0xe906f018;
@@ -246,7 +286,7 @@ begin trigger usrtrig
       *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
 
       if(Cnt > 0 && Cnt < blkSize + 10) {
-        //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
+        //logMsg("Will transfer %d words from TDC %d\n", Cnt, ii);
 
         DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
         tmpaddr1 = rol->dabufp;
@@ -276,29 +316,32 @@ begin trigger usrtrig
       }
     }
   }
-%%
+  %%
 
- close bank
- close event
-end trigger
+   close bank
+   close event
+ end trigger
 
 begin done usrtrig
 
 end done
 
 begin done
+int ARMbusy, busyLoop;
+int DP_Bank;
+
 %%
-  if(event_ty == 14 || event_ty == 11) {
-    for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
+  if(event_ty == 2) {
     for(ii = 0; ii < NTDC; ii++) {
-       //CR_HeaderInit(ii, csr);    //Clear header (trigger word)
-       CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
+	  CR_HeaderInit(ii, csr);
+	  CR_TrigEnable(ii);
     }
+    v1495_ExternalPulser(0);
   }
 %%
 
-  # Acknowledge tir register
-  CDOACK(VME,1,0);
+  # Re-enable Trigger Source here
+  s3610IntAck(TRIG_INPUT);
 end done
 
 begin status

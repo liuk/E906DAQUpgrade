@@ -16,6 +16,7 @@ const NTDC = 6
 const TIR_ADDR = 0x0ed0
 const NFlushMax = 9000
 const blkSize = 300
+const PerEventRead = 2
 
 # Define tsP pointer even if there is no TS in the Crate
 struct vme_ts2 *tsP;
@@ -26,6 +27,7 @@ extern int bigendian_out;
 int ii;
 
 %%
+int ARM_enable = 1;
 int UP_Limit = 433;
 int Low_Limit = 365;
 int TDCHardID[6] = {1, 2, 3, 4, 5, 6};
@@ -39,7 +41,7 @@ int TDCSetup;
 
 int nFlushes = 0;
 int BeamOn = 1;
-int PerEventRead = 0;
+int busyFlag[NTDC];
 %%
 
 begin download
@@ -54,8 +56,8 @@ begin download
   # Setup TIR
   tirInit(TIR_ADDR);
 
-  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31);
-  CR_Init(0x09000000, 0x1000000, NTDC);
+  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31) + (ARM_enable << 27);
+  CR_Init(TDCBoardID, 0x1000000, NTDC);
 
   log inform "User Download TIR Executed"
 end download
@@ -147,8 +149,9 @@ begin go
 end go
 
 begin trigger usrtrig
-  variable ii, retVal, maxWords, nWords, remBytes
+  variable ii, jj, retVal, maxWords, nWords, remBytes
   int Cnt, totalDMAwords;
+  int ARMbusy, busyLoop;
   int DP_Bank;
   unsigned int* DMAaddr;
   long tmpaddr1, tmpaddr2;
@@ -163,18 +166,19 @@ begin trigger usrtrig
 
 %%
   if(event_ty == 14 && BeamOn == 1) {  //Physics event
-    DP_Bank = (event_no - 1) & 0xf;
+    DP_Bank = ((event_no - 1) & 0xf) << 10;
     for(ii = 0; ii < NTDC; ii++) {
       CR_FastTrigDisable(ii, csr);//when trigger arrives at TDC, disable further trigger input
-      DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
+      busyFlag[ii] = 1;
+      //DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
     }
 
-    DP_Bank = DP_Bank << 12;
     for(ii = 0; ii < NTDC; ii++) {
       // data scaler flag=3, ignore=0, latch=1, tdc=2, dsTDC2 flag=4, v1495=5, ZStdc=6, noZSWC=7, ZSWC=8,
       // Run2TDC= 10, Run2TDC header = 11                                                            ,
       *rol->dabufp++ = 0xe906f010; // run2 TDC
       *rol->dabufp++ = TDCBoardID + (ii << 24);
+      *rol->dabufp++ = event_no - 1;
 
       //Per-event readout
       if(PerEventRead == 1) {
@@ -201,10 +205,26 @@ begin trigger usrtrig
             rol->dabufp += nWords;
           }
         }//retVal < 0
-      } else {
+      } else if(PerEventRead == 2) {
         *rol->dabufp++ = CR_d[ii]->data[0];
+        //for(jj = 0; jj < 16; ++jj) *rol->dabufp++ = DP_Read(ii, jj << 10);
       }
     }//for NTDC
+
+    //Wait for the interupt to be over
+    ARMbusy = 1;
+    busyLoop = 0;
+    while(ARMbusy > 0 && busyLoop < 50) {
+      ARMbusy = 0;
+      ++busyLoop;
+      for(ii = 0; ii < NTDC; ++ii) {
+        if(busyFlag[ii] == 0) continue;
+
+        busyFlag[ii] = ((DP_Read(ii, DP_Bank) & 0x80000000) >> 31);
+        ARMbusy = ARMbusy + busyFlag[ii];
+      }
+    }
+
     //Finalize
     *rol->dabufp++ = 0xe906c0da;
   } else if(event_ty == 12) {    //EOS event
