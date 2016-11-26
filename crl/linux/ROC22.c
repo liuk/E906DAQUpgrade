@@ -49,11 +49,13 @@ void Clear64Init()
   }
 }
 
+#define NTDC 6
+
 const int TDC_ScalarON = 1;
-const int NTDC = 6;
 const int NFlushMax = 9000;
 const int blkSize = 300;
 const int PerEventRead = 2;
+const int maxWaitCycle = 35;
 
 int event_no;
 int event_ty;
@@ -73,6 +75,7 @@ int TDCSetup;
 
 int nFlushes = 0;
 int BeamOn = 1;
+int EOSIssued = 0;
 int busyFlag[NTDC];
 
 void rocDownload()
@@ -180,15 +183,14 @@ void rocTrigger(int arg)
   extern unsigned int* dma_dabufp;
 
   *dma_dabufp++ = LSWAP(rol->pid);
-  *dma_dabufp++ = LSWAP(0X000e0100);
+  *dma_dabufp++ = LSWAP(0x000e0100);
   *dma_dabufp++ = LSWAP(0xe9060000);
 
   if(event_ty == 14 && BeamOn == 1) { //Physics event
     DP_Bank = ((event_no - 1) & 0xf) << 10;
     for(ii = 0; ii < NTDC; ii++){
-      CR_FastTrigDisable(ii, csr); //when trigger arrives at TDC, disable further trigger input
+      //CR_FastTrigDisable(ii, csr); //when trigger arrives at TDC, disable further trigger input
       busyFlag[ii] = 1;
-      //DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
     }
 
     for(ii = 0; ii < NTDC; ii++) {
@@ -196,7 +198,7 @@ void rocTrigger(int arg)
       //  Run2TDC= 10, Run2TDC header = 11                                                            ,
       *dma_dabufp++ = LSWAP(0xe906f010); // run2 TDC
       *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24));
-      *dma_dabufp++ = LSWAP(event_no - 1);
+      // *dma_dabufp++ = LSWAP(event_no - 1);
 
       if(PerEventRead == 1) {
         maxWords = 257;
@@ -218,7 +220,7 @@ void rocTrigger(int arg)
 	      } else if(remBytes == 0) {        //Transfer completed //
 	        dma_dabufp += maxWords;
 	      } else {                            //Transfer Terminated //
-	        nWords = (remBytes >> 2);
+	        nWords = maxWords - (remBytes >> 2);
 	        dma_dabufp += nWords;
 	      }
 	    }//retVal <0
@@ -231,37 +233,40 @@ void rocTrigger(int arg)
     //Wait for the interupt to be over
     ARMbusy = 1;
     busyLoop = 0;
-    while(ARMbusy > 0 && busyLoop < 50) {
+    while(ARMbusy > 0 && busyLoop < maxWaitCycle) {
       ARMbusy = 0;
-      ++busyLoop;
       for(ii = 0; ii < NTDC; ++ii) {
-        if(busyFlag[ii] == 0) continue;
+        //if(busyFlag[ii] == 0) continue;
 
+        ++busyLoop;
         busyFlag[ii] = ((DP_Read(ii, DP_Bank) & 0x80000000) >> 31);
         ARMbusy = ARMbusy + busyFlag[ii];
       }
     }
 
+    *dma_dabufp++ = LSWAP(busyLoop);
     *dma_dabufp++ = LSWAP(0xe906c0da);
   } else if(event_ty == 12) { //EOS event
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
     nFlushes = 0;
     BeamOn = 0;
+    EOSIssued = 1;
     logMsg("Received EOS event! Will start off-beam transfer... \n");
   } else if(event_ty == 11) { //BOS event
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060000, 0x7ffe, 0x7ffe);
     BeamOn = 1;
+    EOSIssued = 0;
     logMsg("Received BOS event! Will start on-beam transfer... \n");
   } else if(event_ty == 10 && nFlushes < NFlushMax && BeamOn == 0) {
     ++nFlushes;
-    *dma_dabufp++ = LSWAP(0xe906f018);
 
     for(ii = 0; ii < NTDC; ++ii) {
       Cnt = DP_Read(ii, 0);
       DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+      *dma_dabufp++ = LSWAP(0xe906f018);
       *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24) + Cnt);
 
-      if(Cnt > 0 && Cnt < blkSize + 10) {
+      if(EOSIssued == 1 && Cnt > 0 && Cnt < blkSize + 10) {
         //printf("Will transfer %d words from TDC %d\n", Cnt, ii);
 
         tmpaddr1 = dma_dabufp;
@@ -278,9 +283,9 @@ void rocTrigger(int arg)
   	        logMsg("ERROR during DMA transfer 0x%x\n",0,0,0,0,0,0);
   	        *dma_dabufp++ = LSWAP(0xda020bad);
   	      } else if(remBytes == 0) {        //Transfer completed //
-  	        dma_dabufp += maxWords;
+  	        dma_dabufp += Cnt;
   	      } else {                            //Transfer Terminated //
-  	        nWords = (remBytes>>2);
+  	        nWords = Cnt - (remBytes >> 2);
   	        dma_dabufp += nWords;
   	      }
         }
@@ -292,6 +297,14 @@ void rocTrigger(int arg)
         DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
       }
     }
+
+    if(nFlushes < NFlushMax) {
+      EOSIssued = 1;
+    } else {
+      EOSIssued = 0;
+    }
+
+    *dma_dabufp++ = LSWAP(0xe906c0da);
   }
 
   EVENTCLOSE;
@@ -301,8 +314,8 @@ void rocDone()
 {
   if(event_ty == 14 || event_ty == 11) {
     //for(ii = 0; ii < NTDC; ii++) CR_HeaderInit(ii, csr); //Clear header (trigger word)
-    for(ii = 0; ii < NTDC; ii++) CR_WR_Reg(ii,7, event_no);
-    for(ii = 0; ii < NTDC; ii++) CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
+    for(ii = 0; ii < NTDC; ii++) CR_WR_Reg(ii, 7, event_no);
+    //for(ii = 0; ii < NTDC; ii++) CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
   }
 }
 

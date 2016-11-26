@@ -42,6 +42,7 @@ int TDCSetup;
 
 int nFlushes = 0;
 int BeamOn = 1;
+int EOSIssued = 0;
 int busyFlag[NTDC];
 %%
 
@@ -57,7 +58,7 @@ begin download
   # Setup TIR
   tirInit(TIR_ADDR);
 
-  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31);
+  LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31) + (ARM_enable << 27);
   CR_Init(TDCBoardID, 0x1000000, NTDC);
 
   log inform "User Download TIR Executed"
@@ -93,7 +94,7 @@ begin prestart
     CR_WR_Reg(ii, 6, 0);
     DP_Write(ii, 0xe906000f, 0x7ffe, 0x7ffe); // reset ARM
 
-    if(TDC_ScalarON==1) {
+    if(TDC_ScalarON == 1) {
       CR_Scalar_Switch(ii, 1);
 	  CR_ScalarInit(ii, 1);
    	  CR_ScalarInit(ii, 0);
@@ -151,6 +152,7 @@ begin go
 	}
   }
   SL_DataInit();
+  SL_Scalar_Switch(0);
   SL_DP_Write(0xe9068000 + blkSize, 0x7ffe, 0x7ffe);
 %%
 
@@ -176,11 +178,11 @@ begin trigger usrtrig
   if(event_ty == 14 && BeamOn == 1) {  //Physics event
     DP_Bank = ((event_no - 1) & 0xf) << 10;
     for(ii = 0; ii < NTDC; ii++) {
-      CR_FastTrigDisable(ii, csr);//when trigger arrives at TDC, disable further trigger input
+      //CR_FastTrigDisable(ii, csr);//when trigger arrives at TDC, disable further trigger input
       busyFlag[ii] = 1;
       //DP_Write(ii, DP_Bank, 0x7ffe, 0x7ffe);
     }
-    SL_Scalar_Switch(1);
+    //SL_Scalar_Switch(1);
     //SL_DP_Write(DP_Bank, 0x7ffe, 0x7ffe);
 
     for(ii = 0; ii <= NTDC; ii++) {
@@ -196,10 +198,10 @@ begin trigger usrtrig
         DMAaddr = SL_ADDR + 0x800;
         *rol->dabufp++ = 0xe906f013;
       }
-      *rol->dabufp++ = event_no - 1;
+      // *rol->dabufp++ = event_no - 1;
 
       //Per-event readout
-      if(PerEventRead == 1) {
+      if(PerEventRead == 1 || (ii == NTDC && PerEventRead == 2)) {
         tmpaddr1 = rol->dabufp;
         tmpaddr2 = DMAaddr;
         if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *rol->dabufp++ = 0xe906e906;
@@ -220,7 +222,7 @@ begin trigger usrtrig
             rol->dabufp += nWords;
           }
         }//retVal < 0
-      } else if(PerEventRead == 2) {
+      } else if(PerEventRead == 2 && ii < NTDC) {
         *rol->dabufp++ = CR_d[ii]->data[0];
         //for(jj = 0; jj < 16; ++jj) *rol->dabufp++ = DP_Read(ii, jj << 10);
       }
@@ -229,49 +231,51 @@ begin trigger usrtrig
     //Wait for the interupt to be over
     ARMbusy = 1;
     busyLoop = 0;
-    while(ARMbusy > 0 && busyLoop < 50) {
+    while(ARMbusy > 0 && busyLoop < maxWaitCycle) {
       ARMbusy = 0;
-      ++busyLoop;
       for(ii = 0; ii < NTDC; ++ii) {
-        if(busyFlag[ii] == 0) continue;
+        //if(busyFlag[ii] == 0) continue;
 
+        ++busyLoop;
         busyFlag[ii] = ((DP_Read(ii, DP_Bank) & 0x80000000) >> 31);
         ARMbusy = ARMbusy + busyFlag[ii];
       }
     }
 
     //Finalize
-    SL_ShortDataInit(2);
+    //SL_ShortDataInit(2);
     *rol->dabufp++ = 0xe906c0da;
   } else if(event_ty == 12) {    //EOS event
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
     SL_DP_Write(0xe9060001, 0x7ffe, 0x7ffe);
     nFlushes = 0;
     BeamOn = 0;
+    EOSIssued = 1;
     logMsg("Received EOS event! Will start off-beam transfer...\n");
   } else if(event_ty == 11) { //BOS event
-    BeamOn = 1;
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060000, 0x7ffe, 0x7ffe);
     SL_DP_Write(0xe9060000, 0x7ffe, 0x7ffe);
+    BeamOn = 1;
+    EOSIssued = 0;
     logMsg("Received BOS event! Will start on-beam transfer...\n");
   } else if(event_ty == 10 && nFlushes < NFlushMax && BeamOn == 0) {     // flush event
     //logMsg("Flush event received! Read DP ... ");
     ++nFlushes;
-    *rol->dabufp++ = 0xe906f018;
 
     for(ii = 0; ii <= NTDC; ++ii) {
       if(ii == NTDC) {
-        *rol->dabufp++ = 0xe906f01b;
         Cnt = SL_DP_Read(0);
         DMAaddr = SL_ADDR + 0x20000;
+        *rol->dabufp++ = 0xe906f01b;
         *rol->dabufp++ = (SL_ADDR & 0xffff0000) + Cnt;
       } else {
         Cnt = DP_Read(ii, 0);
         DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+        *rol->dabufp++ = 0xe906f018;
         *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
       }
 
-      if(Cnt > 0 && Cnt < blkSize + 10) {
+      if(EOSIssued == 1 && Cnt > 0 && Cnt < blkSize + 10) {
         //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
 
         tmpaddr1 = rol->dabufp;
@@ -308,6 +312,14 @@ begin trigger usrtrig
         }
       }
     }
+
+    if(nFlushes < NFlushMax) {
+      EOSIssued = 1;
+    } else {
+      EOSIssued = 0;
+    }
+
+    *rol->dabufp++ = 0xe906c0da;
   }
 %%
 
@@ -324,11 +336,13 @@ begin done
   if(event_ty == 14 || event_ty == 11) {
     for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
     SL_WR_Reg(7, event_no);
+    /*
     for(ii = 0; ii < NTDC; ii++) {
        //CR_HeaderInit(ii, csr); //Clear header (trigger word)
        CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
     }
     SL_Scalar_Switch(0);
+    */
   }
 %%
 
