@@ -12,7 +12,7 @@ vme readout
 ts control
 
 const TDC_ScalarON = 1
-const NTDC = 7
+const NTDC = 6
 const TIR_ADDR = 0x0ed0
 const NFlushMax = 9000
 const blkSize = 300
@@ -29,23 +29,16 @@ int ii;
 
 %%
 int ARM_enable = 1;
-int UP_Limit = 283;
-int Low_Limit = 268;
-int PROP_UP_Limit = 286;
-int PROP_Low_Limit = 125;
-int TDCHardID[7] = {13, 14, 15, 16, 18, 19, 42};
+int UP_Limit = 453;
+int Low_Limit = 428;
+int TDCHardID[6] = {117, 108, 63, 66, 67, 68, 120};
 
 int TDCBoardID = 0x09000000;
 int csr = 0xffff0060;  // csr = 0xffff0060 /rising edge;  0xffff0160 /both edge / 2048ns /only 1 buffer
 int MultiHitSetup = 0x0;
 int TimeWindowOn = 1;
 int LimitReg;
-int PROP_LimitReg;
 int TDCSetup;
-
-int PROP_CSR           = 0xffff0060;
-int PROP_MultiHitSetup = 0x890000;
-int PROP_TimeWindowOn  = 1;
 
 int nFlushes = 0;
 int BeamOn = 1;
@@ -66,7 +59,6 @@ begin download
   tirInit(TIR_ADDR);
 
   LimitReg = Low_Limit + (UP_Limit << 16) + (TimeWindowOn << 31) + (ARM_enable << 27);
-  PROP_LimitReg = PROP_Low_Limit + (PROP_UP_Limit << 16) + (PROP_TimeWindowOn << 31) + (ARM_enable << 27);
   CR_Init(TDCBoardID, 0x1000000, NTDC);
 
   log inform "User Download TIR Executed"
@@ -94,47 +86,32 @@ begin prestart
       *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
 
       CR_Reset(ii);
-      if(ii > 3) { //prop tubes
-        *rol->dabufp++ = PROP_CSR;  //csr (buffersize, timewindow length, etc)
-        *rol->dabufp++ = PROP_MultiHitSetup;
-        *rol->dabufp++ = PROP_LimitReg; //smaller timewindow size
-        CR_WR_Reg(ii, 5, PROP_LimitReg); //write timewindow size to TDC register
-        CR_WR_Reg(ii, 3, PROP_MultiHitSetup); //turn on/off MultiHit Elimination
-      } else {
-        *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
-        *rol->dabufp++ = MultiHitSetup;
-        *rol->dabufp++ = LimitReg;
-        CR_WR_Reg(ii, 5, LimitReg);
-        CR_WR_Reg(ii, 3, MultiHitSetup); //turn off MultiHit Elimination
-      }
+      *rol->dabufp++ = csr;  //csr (buffersize, timewindow length, etc)
+      *rol->dabufp++ = MultiHitSetup;
+      *rol->dabufp++ = LimitReg;
+      CR_WR_Reg(ii, 5, LimitReg);
+      CR_WR_Reg(ii, 3, MultiHitSetup); //turn off MultiHit Elimination
       CR_WR_Reg(ii, 6, 0);
       DP_Write(ii, 0xe906000f, 0x7ffe, 0x7ffe); // reset ARM
 
       if(TDC_ScalarON == 1) {
-	    CR_Scalar_Switch(ii, 1);
-	    CR_ScalarInit(ii, 1);
-   	    CR_ScalarInit(ii, 0);
+        CR_Scalar_Switch(ii, 1);
+        CR_ScalarInit(ii, 1);
+        CR_ScalarInit(ii, 0);
       }
-    }//for ntdc
-%%
+    }  //for ntdc
+  %%
+
   UECLOSE;
-  log inform "Prestart  Done."
+  log inform "Prestart Done."
 end prestart
 
 begin end
   variable trig_count
 
 %%
-  for(ii = 0; ii <= 3; ii++) {
+  for(ii = 0; ii < NTDC; ii++) {
     CR_FastTrigDisable(ii, csr);
-    if(TDC_ScalarON == 1) {
-      CR_Scalar_Switch(ii, 1); //using buffer0, so set pointer to buffer1 to stop writing to buffer0
-      CR_ScalarDisplay(ii, 0); //show buffer0
-    }
-  }
-
-  for(ii = 4; ii < NTDC; ii++) {
-    CR_FastTrigDisable(ii, PROP_CSR);
     if(TDC_ScalarON == 1) {
       CR_Scalar_Switch(ii, 1); //using buffer0, so set pointer to buffer1 to stop writing to buffer0
       CR_ScalarDisplay(ii, 0); //show buffer0
@@ -159,24 +136,14 @@ begin go
 %%
   BeamOn = 1;
   for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
-  for(ii = 0; ii <= 3; ii++) {
+  for(ii = 0; ii < NTDC; ii++) {
     CR_p[ii]->reg[1] = csr;
     DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);   //set control registers
     CR_FastTrigEnable(ii, csr);
 	if(TDC_ScalarON == 1) {
-      CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
-      CR_Scalar_Switch(ii, 0); //set pointer to buffer0 to start filling
-    }
-  }
-
-  for(ii = 4; ii < NTDC; ii++) {
-    CR_p[ii]->reg[1] = PROP_CSR;
-    DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);   //set control registers
-    CR_FastTrigEnable(ii, PROP_CSR);
-    if(TDC_ScalarON == 1) {
-      CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
-      CR_Scalar_Switch(ii, 0); //set pointer to buffer0 to start filling
-    }
+	  CR_ScalarDisplay(ii, 0); //show buffer0 (should be empty at go)
+	  CR_Scalar_Switch(ii, 0); //set pointer to buffer0 to start filling
+	}
   }
 %%
 
@@ -283,7 +250,7 @@ begin trigger usrtrig
       *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
 
       if(EOSIssued == 1 && Cnt > 0 && Cnt < blkSize + 10) {
-        //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
+        //logMsg("Will transfer %d words from TDC %d\n", Cnt, ii);
 
         DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
         tmpaddr1 = rol->dabufp;
@@ -340,21 +307,15 @@ begin done
   if(event_ty == 14 || event_ty == 11) {
     for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
     /*
-    for(ii = 0; ii <= 3; ii++) {
+    for(ii = 0; ii < NTDC; ii++) {
        //CR_HeaderInit(ii, csr);    //Clear header (trigger word)
-       CR_FastTrigEnable(ii, csr); //Re-initialize TDC trigger accept
-    }
-
-    for(ii = 4; ii < NTDC; ii++) {
-       //CR_HeaderInit(ii, PROP_CSR);    //Clear header (trigger word)
-       CR_FastTrigEnable(ii, PROP_CSR); //Re-initialize TDC trigger accept
-    }
-    */
+       CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
+    }*/
   }
 %%
 
   # Acknowledge tir register
-  CDOACK(VME,1,0);
+  CDOACK(VME, 1, 0);
 end done
 
 begin status

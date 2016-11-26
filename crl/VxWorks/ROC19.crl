@@ -17,6 +17,7 @@ const TIR_ADDR = 0x0ed0
 const NFlushMax = 9000
 const blkSize = 300
 const PerEventRead = 2
+const maxWaitCycle = 35
 
 # Define tsP pointer even if there is no TS in the Crate
 struct vme_ts2 *tsP;

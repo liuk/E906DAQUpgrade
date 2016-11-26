@@ -18,6 +18,7 @@ const SL_ADDR = 0x0f000000
 const NFlushMax = 9000
 const blkSize = 300
 const PerEventRead = 2
+const maxWaitCycle = 35
 
 # Define tsP pointer even if there is no TS in the Crate
 struct vme_ts2 *tsP;
@@ -244,6 +245,7 @@ begin trigger usrtrig
 
     //Finalize
     //SL_ShortDataInit(2);
+    *rol->dabufp++ = busyLoop;
     *rol->dabufp++ = 0xe906c0da;
   } else if(event_ty == 12) {    //EOS event
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
