@@ -107,6 +107,59 @@ lPTR dpBankHeaderAddr[NBANKS];   // configured at start time where header of eve
 unsigned int buffer[BUFSIZE];
 
 //------------------------------------------------------------------------------
+//         Circular queue to stop job items
+//------------------------------------------------------------------------------
+#define QueueSize 16;
+volatile struct CirQueue
+{
+    int front;
+    int back;
+    int count;
+    unsigned int array[QueueSize];
+} jobQueue;
+
+void initQueue(void)
+{
+    jobQueue.front = 0;
+    jobQueue.back = -1;
+    jobQueue.count = 0;
+}
+
+int isQEmpty(void)
+{
+    if(jobQueue.count == 0) return 1;
+    return 0;
+}
+
+int isQFull(void)
+{
+    if(jobQueue.count == QueueSize) return 1;
+    return 0;
+}
+
+void enQueue(unsigned int item)
+{
+    if(isQFull() == 1)
+    {
+        printf("- ERROR: job queue is full!\n\r");
+        return;
+    }
+
+    jobQueue.back = (jobQueue.back + 1) & QueueSize;
+    jobQueue.array[jobQueue.back] = item;
+    ++jobQueue.count;
+}
+
+unsigned int deQueue()
+{
+    unsigned item = jobQueue.array[jobQueue.front];
+    jobQueue.front = (jobQueue.front + 1) & QueueSize;
+    --jobQueue.count;
+
+    return item;
+}
+
+//------------------------------------------------------------------------------
 /// initialize
 //------------------------------------------------------------------------------
 void init(void)
@@ -123,6 +176,9 @@ void init(void)
 
     //set the number of words in SDRAM to 0
     nWordsTotal = 0;
+
+    //Reset job queue
+    initQueue();
 
 #if (BeamOnDBG > 0)
     printf("Leaving init function. \n\r");
@@ -311,16 +367,15 @@ void CentralDispatch(void)
 
     if((cmd & 0xffff0000) != 0xe9060000)
     {
-        currentDPBankID = cmd & 0xf;
         if(state == BOS)
         {
-            beamOnTransfer();
+            enQueue(cmd & 0xf);
         }
         else if(state == READY)
         {
             state = BOS;
             currentSDAddr = sdStartAddr;
-            beamOnTransfer();
+            enQueue(cmd & 0xf);
         }
     }
     else if(cmd == TRANSFERCMD)
@@ -457,5 +512,12 @@ int main(void)
     state = READY;
 
     // Main loop
-    while(1);
+    while(1)
+    {
+        if(state == BOS && isQEmpty() == 0)
+        {
+            currentDPBankID = deQueue();
+            beamOnTransfer();
+        }
+    }
 }
