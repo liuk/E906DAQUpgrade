@@ -6,3 +6,7 @@ makelist.local ROC19.crl ppc -mlongcall
 makelist.local ROC21.crl ppc -mlongcall
 makelist.local ROC23.crl ppc -mlongcall
 makelist.local ROC24.crl ppc -mlongcall
+makelist.local ROC27.crl ppc -mlongcall
+makelist.local ROC29.crl ppc -mlongcall
+makelist.local ROC30.crl ppc -mlongcall
+makelist.local vme_ts_tir_scale.crl ppc -mlongcall
