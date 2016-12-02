@@ -30,7 +30,7 @@
 #define SDSIZE              0x03cf8000
 
 /// Size of SDRAM in words
-#define NSDWORDS            0x0f3e0000
+#define NSDWORDS            0x00f3e000
 
 /// Number of data banks in Dual-port
 #define NBANKS              16
@@ -162,7 +162,7 @@ void beamOnTransfer(void)
 
     //extract nWords from header
 #if (ScalarMode > 0)
-    unsigned int nWords = headerPos;
+    unsigned int nWords = headerPos + 1;
 #else
     unsigned int nWords = (header & NWORDSMASK) >> 20;
 #endif
@@ -340,7 +340,7 @@ void CentralDispatch(void)
     }
     else if(cmd == EOSCMD)
     {
-        printf("- INFO: Received EOS, transits to beam off state \n\r");
+        printf("- INFO: Received EOS, transits to beam off state, will transfer %u words \n\r", nWordsTotal);
         if(state == BOS || state == ERR_OVERFLOW)
         {
             state = EOS;
@@ -350,7 +350,7 @@ void CentralDispatch(void)
     }
     else if(cmd == LASTEVTCMD)
     {
-        printf("- INFO: Received last flush, change back to READY. \n\r");
+        printf("- INFO: Received last flush, change back to READY, %d words left \n\r", nWordsTotal);
         if(state == EOS) beamOffTransfer();
 
         //move to READY
@@ -407,7 +407,7 @@ void ConfigureDPRam()
 #if (ScalarMode == 0)
     headerPos = 0;
 #else
-    headerPos = 48;
+    headerPos = 47;
 #endif
     blkSize = 1800;
     printf("- INIT: Initializing DP ram, header pos = 0x%x, blkSize = %d\n\r", headerPos, blkSize);
