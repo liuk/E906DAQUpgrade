@@ -156,21 +156,17 @@ void beamOnTransfer(void)
     printf("Entering beamOnTransfer function. \n\r");
 #endif
 
-    //Read all the bank headers until the next finished bank
-    unsigned int header = *(dpBankHeaderAddr[currentDPBankID]);
-    unsigned int eventID = *(dpBankEventIDAddr[currentDPBankID]);
-
-    //extract nWords from header
-#if (ScalarMode > 0)
-    unsigned int nWords = headerPos + 1;
+    //set number of words
+#if (ScalarMode == 0)
+    unsigned int nWords = 257;
 #else
-    unsigned int nWords = (header & NWORDSMASK) >> 20;
+    unsigned int nWords = 48;
 #endif
 
 #if (BeamOnDBG > 0)
     if(nWords > NWORDSPERBANK)             printf("Number of words in bank %u exceeded bank size.", currentDPBankID);
     if(currentSDAddr + nWords > sdEndAddr) printf("SDRAM overflow.");
-    printf("- Bank %u header = %08X, has %u words: \n\r", currentDPBankID, header, nWords);
+    printf("- Bank %u has %u words: \n\r", currentDPBankID, nWords);
 #endif
 
     //Protection against SDRAM overflow
@@ -181,29 +177,18 @@ void beamOnTransfer(void)
         return;
     }
 
-    //move the content to SDRAM, apply zero suppression, the last word is eventID
-    lPTR dpAddr = dpBankStartAddr[currentDPBankID];
-    unsigned int word = 0;
-    unsigned int nWordsCounter = 0;
-    while(nWordsCounter != nWords)
-    {
-        word = *dpAddr;
-        ++dpAddr;
-#if (ScalarMode == 0)
-        if(word != 0) buffer[nWordsCounter++] = word;
-#else
-        buffer[nWordsCounter++] = word;
-#endif
-    }
+    //move the content to SDRAM, without zero suppression, the last word is eventID
+    __aeabi_memcpy(currentSDAddr, dpBankStartAddr[currentDPBankID], nWords << 2);
+    currentSDAddr = currentSDAddr + nWords;
 
-    //Now move the event ID
-    buffer[nWordsCounter++] = eventID;
-    __aeabi_memcpy(currentSDAddr, buffer, nWordsCounter << 2);
-    currentSDAddr = currentSDAddr + nWordsCounter;
+    //Now move the event ID, if needed
+#if (ScalarMode > 0)
+    *currentSDAddr++ = *(dpBankEventIDAddr[currentDPBankID]);
+#endif
 
 #if (BeamOnDBG > 0)
-    unsigned int bankID = buffer[nWordsCounter-1] & BANKIDMASK;
-    printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", buffer[nWordsCounter-1], bankID);
+    unsigned int bankID = *(dpBankEventIDAddr[currentDPBankID]) & BANKIDMASK;
+    printf("- EventID in this bank is: %8X, supposed to be in bank %u.\n\r", *(dpBankEventIDAddr[currentDPBankID]), bankID);
     //if(bankID != currentDPBank) TRACE_ERROR("BankID does not match on FPGA side.\n\r");
 #endif
 
@@ -211,10 +196,14 @@ void beamOnTransfer(void)
     *(dpBankHeaderAddr[currentDPBankID]) = 0;
 
     //Update the number of words in SD
-    nWordsTotal = nWordsTotal + nWordsCounter;  //Total number of words = nWords in this event + 1 for eventID
+#if (ScalarMode > 0)
+    nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
+#else
+    nWordsTotal = nWordsTotal + nWords;
+#endif
 
 #if (BeamOnDBG > 0)
-    printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBankID, buffer[nWordsCounter-1], nWords, nWordsTotal);
+    printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBankID, *(dpBankEventIDAddr[currentDPBankID]), nWords, nWordsTotal);
     printf("- IRQ state: level = %u, content = %u\n\r", PIO_Get(&pinPC11), *dpIRQRevAddr);
 #if (BeamOnDBG > 1)
     unsigned int n = sdAddr - sdStartAddr;
@@ -258,26 +247,35 @@ void beamOffTransfer(void)
 
     //Transfer nWords words from SD to DP
     lPTR dpAddr = dpStartAddr + 1;
-    unsigned int nWordsLeft = nWords;
-    while(nWordsLeft >= BUFSIZE)
+    unsigned int bufPtr = 0;
+    unsigned int transferCount = 1;
+    for(unsigned int i = nWords; i != 0; --i)
     {
-        __aeabi_memcpy(buffer, currentSDAddr, BUFSIZEB);
-        currentSDAddr = currentSDAddr + BUFSIZE;
-        nWordsLeft = nWordsLeft - BUFSIZE;
+        unsigned int word = *currentSDAddr++;
+#if (ScalarMode == 0)
+        if(word != 0) buffer[bufPtr++] = word;
+#else
+        buffer[bufPtr++] = word;
+#endif
 
-        __aeabi_memcpy(dpAddr, buffer, BUFSIZEB);
-        dpAddr = dpAddr + BUFSIZE;
+        if(bufPtr == BUFSIZE)
+        {
+            __aeabi_memcpy(dpAddr, buffer, BUFSIZEB);
+            dpAddr = dpAddr + BUFSIZE;
+
+            transferCount = transferCount + BUFSIZE;
+            bufPtr = 0;
+        }
     }
-    if(nWordsLeft != 0)
-    {
-        __aeabi_memcpy(buffer, currentSDAddr, nWordsLeft << 2);
-        currentSDAddr = currentSDAddr + nWordsLeft;
 
-        __aeabi_memcpy(dpAddr, buffer, nWordsLeft << 2);
+    if(bufPtr != 0)  //make the last transfer
+    {
+        __aeabi_memcpy(dpAddr, buffer, bufPtr << 2);
+        transferCount = transferCount + bufPtr;
     }
 
     //Write nWords to the first word at DP
-    *dpStartAddr = nWords + 1;
+    *dpStartAddr = transferCount;
 
 #if (BeamOffDBG > 1)
     printf("- Currently the SD RD pointer is at %08X\n\r", currentSDAddr);
