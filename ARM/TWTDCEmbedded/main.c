@@ -187,9 +187,12 @@ void beamOnTransfer(void)
     __aeabi_memcpy(currentSDAddr, dpBankStartAddr[currentDPBankID], nWords << 2);
     currentSDAddr = currentSDAddr + nWords;
 
-    //Now move the event ID, if needed
-#if (ScalarMode > 0)
+    //Now move the event ID, if needed, and Update the number of words in SD
+#if (ScalarMode == 0)
+    nWordsTotal = nWordsTotal + nWords;
+#else
     *currentSDAddr++ = *(dpBankEventIDAddr[currentDPBankID]);
+    nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
 #endif
 
 #if (BeamOnDBG > 0)
@@ -200,13 +203,6 @@ void beamOnTransfer(void)
 
     //Reset the event header
     *(dpBankHeaderAddr[currentDPBankID]) = 0;
-
-    //Update the number of words in SD
-#if (ScalarMode > 0)
-    nWordsTotal = nWordsTotal + nWords + 1;  //Total number of words = nWords in this event + 1 for eventID
-#else
-    nWordsTotal = nWordsTotal + nWords;
-#endif
 
 #if (BeamOnDBG > 0)
     printf("- State %u: finished reading bank %u, eventID = %08X, has %u words, %u words in SDRAM now.\n\r", state, currentDPBankID, *(dpBankEventIDAddr[currentDPBankID]), nWords, nWordsTotal);
@@ -449,7 +445,7 @@ int main(void)
     TRACE_CONFIGURE(DBGU_STANDARD, 115200, BOARD_MCK);
     TRACE_INFO("-- SeaQuest VME TDC Embedded Project %s --\n\r", SOFTPACK_VERSION);
     TRACE_INFO("-- %s\n\r", BOARD_NAME);
-    TRACE_INFO("-- Compiled: %s %s --\n\r", __DATE__, __TIME__);
+    printf("- INFO: Compiled: %s %s --\n\r", __DATE__, __TIME__);
 
     // Configuration
     ConfigureLED();
