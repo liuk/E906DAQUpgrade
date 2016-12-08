@@ -58,6 +58,10 @@
 #define TRANSFERCMD         0xe9060002   //This command is issued on flush event, starts one block transfer
 #define LASTEVTCMD          0xe9060003   //This command is issued on last flush, change state to wait
 
+/// Error codes
+#define EC_INCOMPLETE       0xe906ae01   //Off-beam transfer is somehown incomplete
+#define EC_SDOVERFLOW       0xe906ae02   //SD-RAM overflow --- too many words
+
 //------------------------------------------------------------------------------
 //         Local variables
 //------------------------------------------------------------------------------
@@ -94,9 +98,10 @@ const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x2020
 const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Dual-port configuration/operation address
-const lPTR dpCtrlRegAddr    = (lPTR)0x5001ffe8;   //register for run control parameters -- 0x7ffa
+const lPTR dpErrorAddr      = (lPTR)0x5001ffe8;   //register for run control parameters -- 0x7ffa
+const lPTR dpStateAddr      = (lPTR)0x5001ffec;   //register for run control parameters -- 0x7ffb
 const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt       -- 0x7ffe
-const lPTR dpIRQSndAddr     = (lPTR)0x5001ffff;   //register to send interrupt          -- 0x7fff
+const lPTR dpIRQSndAddr     = (lPTR)0x5001fffe;   //register to send interrupt          -- 0x7fff
 
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
@@ -172,8 +177,9 @@ void beamOnTransfer(void)
     //Protection against SDRAM overflow
     if(currentSDAddr > sdEndAddr)
     {
-        printf("- ERROR: SDRAM overflow!!!!");
+        printf("- ERROR: SDRAM overflow!!!!\n\r");
         state = ERR_OVERFLOW;
+        *dpErrorAddr = EC_SDOVERFLOW;
         return;
     }
 
@@ -210,7 +216,6 @@ void beamOnTransfer(void)
     for(unsigned int i = 0; i < n; ++i) printf("-- %u: %08X = %08X\n\r", i, sdStartAddr+i, *(sdStartAddr+i));
 #endif
 #endif
-    //printf("%u     %u \n\r", buffer[nWordsCounter-1], currentDPBankID);
 
 #if (BeamOnDBG > 0)
     printf("Exiting beamOnTransfer, state = %u\n\r", state);
@@ -349,7 +354,11 @@ void CentralDispatch(void)
     else if(cmd == LASTEVTCMD)
     {
         printf("- INFO: Received last flush, change back to READY, %d words left \n\r", nWordsTotal);
-        if(state == EOS) beamOffTransfer();
+        if(nWordsTotal != 0)
+        {
+            *dpErrorAddr = EC_INCOMPLETE;
+            printf("- ERROR: off-beam transfer is not complete! \n\r");
+        }
 
         //move to READY
         init();
