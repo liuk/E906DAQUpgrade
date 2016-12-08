@@ -445,7 +445,6 @@ int main(void)
     TRACE_CONFIGURE(DBGU_STANDARD, 115200, BOARD_MCK);
     TRACE_INFO("-- SeaQuest VME TDC Embedded Project %s --\n\r", SOFTPACK_VERSION);
     TRACE_INFO("-- %s\n\r", BOARD_NAME);
-    printf("- INFO: Compiled: %s %s --\n\r", __DATE__, __TIME__);
 
     // Configuration
     ConfigureLED();
@@ -454,6 +453,7 @@ int main(void)
 
     //Write everything in DP to 0
     __aeabi_memset(dpStartAddr, NDPWORDS << 2, 0);
+    printf("- INFO: Compiled: %s %s. \n\r", __DATE__, __TIME__);
 
     // Set to be ready for beam
     init();
