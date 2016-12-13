@@ -53,9 +53,8 @@ void Clear64Init()
 
 const int TDC_ScalarON = 1;
 const int NFlushMax = 9000;
-const int blkSize = 300;
-const int PerEventRead = 2;
-const int maxWaitCycle = 35;
+const int blkSize = 1799;
+const int PerEventRead = 0;
 
 int event_no;
 int event_ty;
@@ -75,8 +74,6 @@ int TDCSetup;
 
 int nFlushes = 0;
 int BeamOn = 1;
-int EOSIssued = 0;
-int busyFlag[NTDC];
 
 void rocDownload()
 {
@@ -112,7 +109,7 @@ void rocPrestart()
   CR_Init(TDCBoardID, 0x1000000, NTDC);
 
   *rol->dabufp++ = rol->pid;
-  for(ii = 0; ii < NTDC; ii++) {
+  for(ii = 0; ii < NTDC; ++ii) {
     *rol->dabufp++ = 0xe906f011; //FEE event flag
     *rol->dabufp++ = TDCBoardID + (ii << 24) + TDCHardID[ii];  //Board ID
 
@@ -141,7 +138,7 @@ void rocGo()
   /* Enable modules, if needed, here */
   BeamOn = 1;
   for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, 0);
-  for(ii = 0; ii < NTDC; ii++) {
+  for(ii = 0; ii < NTDC; ++ii) {
     vmeWrite32(&CR_p[ii]->reg[1], csr);
     DP_Write(ii, 0xe9068000 + blkSize, 0x7ffe, 0x7ffe);
     CR_TrigEnable(ii);
@@ -156,7 +153,7 @@ void rocGo()
 
 void rocEnd()
 {
-  for(ii = 0; ii < NTDC; ii++) {
+  for(ii = 0; ii < NTDC; ++ii) {
     CR_FastTrigDisable(ii, csr);
     if(TDC_ScalarON == 1) {
       CR_Scalar_Switch(ii, 2); //using buffer0, so set pointer to buffer1 to stop writing to buffer0
@@ -171,7 +168,6 @@ void rocTrigger(int arg)
 {
   int ii, jj, retVal, maxWords, nWords, remBytes;
   int Cnt, totalDMAwords;
-  int ARMbusy, busyLoop;
   int DP_Bank;
   unsigned int* DMAaddr;
   long tmpaddr1, tmpaddr2;
@@ -188,12 +184,13 @@ void rocTrigger(int arg)
 
   if(event_ty == 14 && BeamOn == 1) { //Physics event
     DP_Bank = ((event_no - 1) & 0xf) << 10;
-    for(ii = 0; ii < NTDC; ii++){
+    /*
+    for(ii = 0; ii < NTDC; ++ii){
       //CR_FastTrigDisable(ii, csr); //when trigger arrives at TDC, disable further trigger input
-      busyFlag[ii] = 1;
     }
+    */
 
-    for(ii = 0; ii < NTDC; ii++) {
+    for(ii = 0; ii < NTDC; ++ii) {
       // data scaler flag=3, ignore = 0, latch=1, tdc=2,dsTDC2 flag=4, v1495=5,ZStdc=6,noZSWC=7,ZSWC=8,
       //  Run2TDC= 10, Run2TDC header = 11                                                            ,
       *dma_dabufp++ = LSWAP(0xe906f010); // run2 TDC
@@ -201,6 +198,7 @@ void rocTrigger(int arg)
       // *dma_dabufp++ = LSWAP(event_no - 1);
 
       if(PerEventRead == 1) {
+        *dma_dabufp++ = LSWAP(vmeRead32(&CR_d[ii]->data[0]));
         maxWords = 257;
         DMAaddr = TDCBoardID + (ii << 24) + 0x20000 + (DP_Bank << 2);
 
@@ -220,7 +218,7 @@ void rocTrigger(int arg)
 	      } else if(remBytes == 0) {        //Transfer completed //
 	        dma_dabufp += maxWords;
 	      } else {                            //Transfer Terminated //
-	        nWords = maxWords - (remBytes >> 2);
+	        nWords = (remBytes >> 2);
 	        dma_dabufp += nWords;
 	      }
 	    }//retVal <0
@@ -230,32 +228,22 @@ void rocTrigger(int arg)
       }
     }//for NTDC
 
-    //Wait for the interupt to be over
-    ARMbusy = 1;
-    busyLoop = 0;
-    while(ARMbusy > 0 && busyLoop < maxWaitCycle) {
-      ARMbusy = 0;
-      for(ii = 0; ii < NTDC; ++ii) {
-        //if(busyFlag[ii] == 0) continue;
-
-        ++busyLoop;
-        busyFlag[ii] = ((DP_Read(ii, DP_Bank) & 0x80000000) >> 31);
-        ARMbusy = ARMbusy + busyFlag[ii];
-      }
-    }
-
-    *dma_dabufp++ = LSWAP(busyLoop);
+    //Finalize
     *dma_dabufp++ = LSWAP(0xe906c0da);
+
+    //Update eventID
+    for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
   } else if(event_ty == 12) { //EOS event
+    for(ii = 0; ii < NTDC; ++ii) CR_FastTrigDisable(ii, csr);
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
     nFlushes = 0;
     BeamOn = 0;
-    EOSIssued = 1;
     logMsg("Received EOS event! Will start off-beam transfer... \n");
   } else if(event_ty == 11) { //BOS event
+    for(ii = 0; ii < NTDC; ++ii) CR_WR_Reg(ii, 7, event_no);
+    for(ii = 0; ii < NTDC; ++ii) CR_FastTrigEnable(ii, csr);
     for(ii = 0; ii < NTDC; ++ii) DP_Write(ii, 0xe9060000, 0x7ffe, 0x7ffe);
     BeamOn = 1;
-    EOSIssued = 0;
     logMsg("Received BOS event! Will start on-beam transfer... \n");
   } else if(event_ty == 10 && nFlushes < NFlushMax && BeamOn == 0) {
     ++nFlushes;
@@ -266,7 +254,7 @@ void rocTrigger(int arg)
       *dma_dabufp++ = LSWAP(0xe906f018);
       *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24) + Cnt);
 
-      if(EOSIssued == 1 && Cnt > 0 && Cnt < blkSize + 10) {
+      if(Cnt > 0 && Cnt < blkSize + 10) {
         //printf("Will transfer %d words from TDC %d\n", Cnt, ii);
 
         tmpaddr1 = dma_dabufp;
@@ -285,27 +273,19 @@ void rocTrigger(int arg)
   	      } else if(remBytes == 0) {        //Transfer completed //
   	        dma_dabufp += Cnt;
   	      } else {                            //Transfer Terminated //
-  	        nWords = Cnt - (remBytes >> 2);
+  	        nWords = (remBytes >> 2);
   	        dma_dabufp += nWords;
   	      }
         }
       }
 
       if(nFlushes < NFlushMax) {
-        if(EOSIssued == 1) {
-          DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
-        } else {
-          DP_Write(ii, 0xe9060001, 0x7ffe, 0x7ffe);
-        }
+        DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
       } else {
         DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
+        *dma_dabufp++ = LSWAP(DP_Read(ii, 0x7ffa));
+        DP_Write(ii, 0, 0x7ffa, 0x7ffa);
       }
-    }
-
-    if(nFlushes < NFlushMax) {
-      EOSIssued = 1;
-    } else {
-      EOSIssued = 0;
     }
 
     *dma_dabufp++ = LSWAP(0xe906c0da);
@@ -316,11 +296,6 @@ void rocTrigger(int arg)
 
 void rocDone()
 {
-  if(event_ty == 14 || event_ty == 11) {
-    //for(ii = 0; ii < NTDC; ii++) CR_HeaderInit(ii, csr); //Clear header (trigger word)
-    for(ii = 0; ii < NTDC; ii++) CR_WR_Reg(ii, 7, event_no);
-    //for(ii = 0; ii < NTDC; ii++) CR_FastTrigEnable(ii,csr); //Re-initialize TDC trigger accept
-  }
 }
 
 void rocCleanup()
