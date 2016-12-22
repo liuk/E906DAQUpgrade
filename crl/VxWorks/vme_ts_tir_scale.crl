@@ -12,20 +12,28 @@ vme readout
 ts control
 
 const TIR_ADDR = 0x0ed0
+const NFlushMax = 9000
+const blkSize = 7
+const PerEventRead = 0
 
 extern unsigned int vxTicks;
+int event_no;
 int event_ty;
 extern int bigendian_out;
+
+# temporary data storage
+int nEvents = 0;
+unsigned int trigTyps[63000];
+unsigned int eventIDs[63000];
+
+# flush event control
+int nFlushes = 0;
+int BeamOn = 1;
 
 begin download
   variable res
 
-  scale32Init(0x08010000,0x10000,3);
-
-  # If the ROC is sending data to Little-Endian EB
-  # e.g. a x86 Linux CPU then bigendian_out = 0.
-  # Unless the ROC is also running on a Little-Endian
-  # machine. Then set bigendian_out=1.
+  scale32Init(0x08010000, 0x10000, 3);
   bigendian_out = 0;
 
   # Setup TS and TIR
@@ -57,8 +65,8 @@ begin prestart
   /***************************************************************************************************/
   //tsEnableInput activates as follows (0xABC,0), where ABC represent 12 bits corresponding to the 12 inputs
   // tsEnableInput(0xfff,0);       /* Enable all Trigger inputs in non-strobe mode
-  // EOS/BOS/NIM5/  NIM4321, MATRIX54321, NIM 5 as flush events
-  //   1   1    1      0000        00000
+  // EOS/BOS/NIM5/NIM4 321, MATRIX54321, NIM 5 as flush events
+  //   1   1    1   0  000        00000
 
   //tsEnableInput(0xe20, 0);       /* Enable only NIM1/NIM5/start/stop inputs in non-strobe mode */
   //tsEnableInput(0xe40, 0);       /* Enable only NIM2/NIM5/start/stop inputs in non-strobe mode */
@@ -75,7 +83,7 @@ begin prestart
   //tsEnableInput(0xe6f, 0); 	   /* Enable only FPGA1-4/NIM1-2/NIM5/start/stop  */
   //tsEnableInput(0xe01, 0);       /* Enable only FPGA1/NIM5/start/stop inputs in non-strobe mode */
   //tsEnableInput(0xe02, 0);       /* Enable only FPGA2/NIM5/start/stop inputs in non-strobe mode */
-  //tsEnableInput(0xe04, 0);       /* Enable only FPGA3/NIM5/sDataTaking?twiki_redirect_cache=e0bb487ceda2975ea847ad0f6afd683atart/stop inputs in non-strobe mode */
+  //tsEnableInput(0xe04, 0);       /* Enable only FPGA3/NIM5/start/stop inputs in non-strobe mode */
   //tsEnableInput(0xe08, 0);       /* Enable only FPGA4/NIM5/start/stop inputs in non-strobe mode */
   //tsEnableInput(0xe10, 0);       /* Enable only FPGA5/NIM5/start/stop inputs in non-strobe mode */
 
@@ -102,7 +110,7 @@ begin prestart
   /***************************************************************************************************/
 
   // nominal as of 10/08/2015
-  tsRoc(7, 29, 127, 7);          /*current config is tsRoc(roc14+18+22,roc17+23+15+21,roc25+16+24+20+26+27+28,TS_roc12+roc19)*/      ///// run4,   2015 Oct.
+  tsRoc(7, 29, 31, 127);           /*current config is tsRoc(roc4+8+12,roc7+11+5+13,roc15+6+10+14+19,TS+roc2+9+20)*/      ///// run4,  2016 Nov.
 
 
   /* Synchronization programming */
@@ -114,8 +122,9 @@ begin prestart
   tsTimerWrite(TS_TIMER_L3A, 0x05);   /* Level 3 Timer 40ns/count */
 
   /* Front End Busy timer 40ns/count */
-  //tsTimerWrite(TS_TIMER_FB,250);         /* 250 = 10 microsec */  //run1
-  tsTimerWrite(TS_TIMER_FB, 750);          /* 750 = 30 microsec */  //test
+  //tsTimerWrite(TS_TIMER_FB, 250);         /* 250 = 10 microsec */  //run1
+  //tsTimerWrite(TS_TIMER_FB, 750);          /* 750 = 30 microsec */  //run2/3/4
+  tsTimerWrite(TS_TIMER_FB, 210);          /* 750 = 30 microsec */  //run2/3/4
   tsCsr2Set(TS_CSR2_ENABLE_FB_TIMER);      /* Enable FEB Timer */
 
   /*  Construct TS memory data  ---  in the following model, all trigger patterns
@@ -158,9 +167,9 @@ begin prestart
   tsPrescale(2, 5000);   // fpga2
   tsPrescale(3, 11);     // fpga3
   tsPrescale(4, 30000);  // fpga4  set to 1 for timing run, 2 for single muon run
-  tsPrescale(5, 7000);    // fpga5
 
   // Following channels, max value is 16 bits
+  tsPrescale(5, 7000);    // fpga5
   tsPrescale(6, 30000);  // nim1 30000 for normal run, 2 for alignment run, 7 for hodoscope efficiency run
   tsPrescale(7, 4000);   // nim2
   tsPrescale(8, 500);    // nim3
@@ -191,10 +200,6 @@ begin end
 
   tsStop(1);
   CDODISABLE(VME, 1, 0);
-
-  # Get Final Trigger Count
-  #  trig_count = tsScalRead(TS_SCALER_EVENT, 0);
-  #  printf("TS Event Scaler Count = %d\n", trig_count);
 
   scale32Disable(0, 0);
   scale32Disable(1, 0);
@@ -235,28 +240,70 @@ begin go
 end go
 
 begin trigger usrtrig
-  variable ii, event_no, tmp_fifocount
+  variable ii, idx_max, tmp_fifocount
   unsigned int tmp_tsfifo;
+
   event_ty = EVTYPE;
   event_no = *rol->nevents;
 
-  # log inform "I got a trigger!!"
   rol->dabufp = (long *) 0;
   open event type EVTYPE of BT_UI4
 
   *rol->dabufp++ = 0x11111111;
   *rol->dabufp++ = 0x11111111;
   *rol->dabufp++ = vxTicks;
-  *rol->dabufp++ = 0xe906f00f;
-
-  #  Read TS trigger input
-  #  tmp_fifocount = tsFifoCount();
-  #  *rol->dabufp++ = tmp_fifocount;
 %%
 
   tmp_tsfifo = tsP->trigData & 0xffff;
-  *rol->dabufp++ = tmp_tsfifo;
+  if(event_ty == 14 && BeamOn == 1) {
+    if(nEvents < 63000) {
+      eventIDs[nEvents] = event_no - 1;
+      trigTyps[nEvents] = tmp_tsfifo;
+      ++nEvents;
+    }
 
+    if(PerEventRead != 0) {
+      *rol->dabufp++ = 0xe906f00f;
+      *rol->dabufp++ = tmp_tsfifo;
+    }
+  } else if(event_ty == 12) {  //EOS event
+    nFlushes = 0;
+    BeamOn = 0;
+    logMsg("Received EOS event! Will start off-beam transfer. \n");
+  } else if(event_ty == 11) {  //BOS event
+    nEvents = 0;
+    BeamOn = 1;
+    logMsg("Received BOS event! Will start on-beam transfer...\n");
+  } else if(event_ty == 10 && nFlushes < NFlushMax && BeamOn == 0) {
+    ++nFlushes;
+
+    if(nFlushes < NFlushMax) {
+      *rol->dabufp++ = 0xe906f00f;
+
+      if((nFlushes - 1)*blkSize < nEvents) {
+        idx_max = nFlushes*blkSize;
+        if(idx_max > nEvents) idx_max = nEvents;
+        *rol->dabufp++ = (idx_max - (nFlushes-1)*blkSize)*2 + 1;
+
+        for(ii = (nFlushes-1)*blkSize; ii < idx_max; ++ii) {
+          *rol->dabufp++ = trigTyps[ii];
+          *rol->dabufp++ = eventIDs[ii];
+        }
+      } else {
+        *rol->dabufp++ = 0;
+      }
+    } else {
+      *rol->dabufp++ = 0xe906f019;
+      if(nEvents >= 63000) {
+        *rol->dabufp++ = 0xe906ae04;
+      } else {
+        *rol->dabufp++ = 0;
+      }
+    }
+    *rol->dabufp++ = 0xe906c0da;
+  }
+
+  /*
   if(event_ty == 11 || event_ty == 12) {
 
     scale32Disable(0, 0);
@@ -288,21 +335,21 @@ begin trigger usrtrig
       scale32Clear(ii, 1);
     }
   } else {
-	*rol->dabufp++ = 0xe906f014;
-	*rol->dabufp++ = s32p[1]->scaler[_I_(20)]; //raw FPGA1
-	*rol->dabufp++ = s32p[1]->scaler[_I_(21)]; //raw FPGA2
-	*rol->dabufp++ = s32p[1]->scaler[_I_(22)]; //raw FPGA3
-	*rol->dabufp++ = s32p[1]->scaler[_I_(23)]; //raw FPGA4
-	*rol->dabufp++ = s32p[1]->scaler[_I_(24)]; //raw FPGA5
-	*rol->dabufp++ = s32p[0]->scaler[_I_(28)]; //afterinh FPGA1
-	*rol->dabufp++ = s32p[0]->scaler[_I_(29)]; //afterinh FPGA2
-	*rol->dabufp++ = s32p[0]->scaler[_I_(30)]; //afterinh FPGA3
-	*rol->dabufp++ = s32p[0]->scaler[_I_(31)]; //afterinh FPGA4
-	*rol->dabufp++ = s32p[0]->scaler[_I_(14)]; //afterinh FPGA5
+  	*rol->dabufp++ = 0xe906f014;
+  	*rol->dabufp++ = s32p[1]->scaler[_I_(20)]; //raw FPGA1
+  	*rol->dabufp++ = s32p[1]->scaler[_I_(21)]; //raw FPGA2
+  	*rol->dabufp++ = s32p[1]->scaler[_I_(22)]; //raw FPGA3
+  	*rol->dabufp++ = s32p[1]->scaler[_I_(23)]; //raw FPGA4
+  	*rol->dabufp++ = s32p[1]->scaler[_I_(24)]; //raw FPGA5
+  	*rol->dabufp++ = s32p[0]->scaler[_I_(28)]; //afterinh FPGA1
+  	*rol->dabufp++ = s32p[0]->scaler[_I_(29)]; //afterinh FPGA2
+  	*rol->dabufp++ = s32p[0]->scaler[_I_(30)]; //afterinh FPGA3
+  	*rol->dabufp++ = s32p[0]->scaler[_I_(31)]; //afterinh FPGA4
+  	*rol->dabufp++ = s32p[0]->scaler[_I_(14)]; //afterinh FPGA5
   }
+  */
 %%
 
-  #log inform "Scaler work!!\n"
   close event
 end trigger
 

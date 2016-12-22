@@ -249,45 +249,48 @@ void rocTrigger(int arg)
     ++nFlushes;
 
     for(ii = 0; ii < NTDC; ++ii) {
-      Cnt = DP_Read(ii, 0);
-      DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
-      *dma_dabufp++ = LSWAP(0xe906f018);
-      *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24) + Cnt);
-
-      if(Cnt > 0 && Cnt < blkSize + 10) {
-        //printf("Will transfer %d words from TDC %d\n", Cnt, ii);
-
-        tmpaddr1 = dma_dabufp;
-        tmpaddr2 = DMAaddr;
-        if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *dma_dabufp++ = LSWAP(0xe906e906);
-
-  	    retVal = vmeDmaSend(dma_dabufp, DMAaddr, Cnt << 2);
-  	    if(retVal < 0) {
-  	      logMsg("ERROR in DMA transfer Initialization 0x%x\n",retVal,0,0,0,0,0);
-  	      *dma_dabufp++ = LSWAP(0xda010bad);
-  	    } else {
-  	      remBytes = vmeDmaDone();
-  	      if(remBytes < 0) {                    //Error//
-  	        logMsg("ERROR during DMA transfer 0x%x\n",0,0,0,0,0,0);
-  	        *dma_dabufp++ = LSWAP(0xda020bad);
-  	      } else if(remBytes == 0) {        //Transfer completed //
-  	        dma_dabufp += Cnt;
-  	      } else {                            //Transfer Terminated //
-  	        nWords = (remBytes >> 2);
-  	        dma_dabufp += nWords;
-  	      }
-        }
-      }
-
       if(nFlushes < NFlushMax) {
+        Cnt = DP_Read(ii, 0);
+        DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+        *dma_dabufp++ = LSWAP(0xe906f018);
+        *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24) + Cnt);
+
+        if(Cnt > 0 && Cnt < blkSize + 10) {
+          //printf("Will transfer %d words from TDC %d\n", Cnt, ii);
+
+          tmpaddr1 = dma_dabufp;
+          tmpaddr2 = DMAaddr;
+          if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *dma_dabufp++ = LSWAP(0xe906e906);
+
+    	    retVal = vmeDmaSend(dma_dabufp, DMAaddr, Cnt << 2);
+    	    if(retVal < 0) {
+    	      logMsg("ERROR in DMA transfer Initialization 0x%x\n",retVal,0,0,0,0,0);
+    	      *dma_dabufp++ = LSWAP(0xda010bad);
+    	    } else {
+    	      remBytes = vmeDmaDone();
+    	      if(remBytes < 0) {                    //Error//
+    	        logMsg("ERROR during DMA transfer 0x%x\n",0,0,0,0,0,0);
+    	        *dma_dabufp++ = LSWAP(0xda020bad);
+    	      } else if(remBytes == 0) {        //Transfer completed //
+    	        dma_dabufp += Cnt;
+    	      } else {                            //Transfer Terminated //
+    	        nWords = (remBytes >> 2);
+    	        dma_dabufp += nWords;
+    	      }
+          }
+        }
+
         DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
       } else {
         DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
+
+        *dma_dabufp++ = LSWAP(0xe906f019);
+        *dma_dabufp++ = LSWAP(TDCBoardID + (ii << 24));
         *dma_dabufp++ = LSWAP(DP_Read(ii, 0x7ffa));
+
         DP_Write(ii, 0, 0x7ffa, 0x7ffa);
       }
     }
-
     *dma_dabufp++ = LSWAP(0xe906c0da);
   }
 

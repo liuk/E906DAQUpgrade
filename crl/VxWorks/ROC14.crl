@@ -251,43 +251,46 @@ begin trigger usrtrig
     ++nFlushes;
 
     for(ii = 0; ii < NTDC; ++ii) {
-      Cnt = DP_Read(ii, 0);
-      *rol->dabufp++ = 0xe906f018;
-      *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
+      if(nFlushes < NFlushMax) {
+        Cnt = DP_Read(ii, 0);
+        *rol->dabufp++ = 0xe906f018;
+        *rol->dabufp++ = (((TDCBoardID + (ii << 24)) & 0xffff0000) + Cnt);  //boardid, numwords
 
-      if(Cnt > 0 && Cnt < blkSize + 10) {
-        //logMsg("Will read %d words from DP from TDC %d:\n", Cnt, ii);
+        if(Cnt > 0 && Cnt < blkSize + 10) {
+          //logMsg("Will transfer %d words from TDC %d\n", Cnt, ii);
 
-        DMAaddr = TDCBoardID + 0x1000000*ii + 0x20000;
-        tmpaddr1 = rol->dabufp;
-        tmpaddr2 = DMAaddr;
-        if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *rol->dabufp++ = 0xe906e906;
+          DMAaddr = TDCBoardID + (ii << 24) + 0x20000;
+          tmpaddr1 = rol->dabufp;
+          tmpaddr2 = DMAaddr;
+          if(((tmpaddr1 & 4) >> 2) != ((tmpaddr2 & 4) >> 2)) *rol->dabufp++ = 0xe906e906;
 
-        retVal = sysVmeDmaSend(rol->dabufp, DMAaddr, Cnt << 2, 0);
-        if(retVal < 0) {
-          *rol->dabufp++ = 0xda010bad;
-        } else {
-          remBytes = sysVmeDmaDone(0, 0);
-          if(remBytes < 0) {
-            *rol->dabufp++ = 0xda020bad;
-          } else if(remBytes == 0) {
-            rol->dabufp += Cnt;
+          retVal = sysVmeDmaSend(rol->dabufp, DMAaddr, Cnt << 2, 0);
+          if(retVal < 0) {
+            *rol->dabufp++ = 0xda010bad;
           } else {
-            nWords = Cnt - (remBytes >> 2);
-            rol->dabufp += nWords;
+            remBytes = sysVmeDmaDone(0, 0);
+            if(remBytes < 0) {
+              *rol->dabufp++ = 0xda020bad;
+            } else if(remBytes == 0) {
+              rol->dabufp += Cnt;
+            } else {
+              nWords = Cnt - (remBytes >> 2);
+              rol->dabufp += nWords;
+            }
           }
         }
-      }
 
-      if(nFlushes < NFlushMax) {
         DP_Write(ii, 0xe9060002, 0x7ffe, 0x7ffe);
       } else {
         DP_Write(ii, 0xe9060003, 0x7ffe, 0x7ffe);
+
+        *rol->dabufp++ = 0xe906f019;
+        *rol->dabufp++ = TDCBoardID + (ii << 24);
         *rol->dabufp++ = DP_Read(ii, 0x7ffa);
+
         DP_Write(ii, 0, 0x7ffa, 0x7ffa);
       }
     }
-
     *rol->dabufp++ = 0xe906c0da;
   }
 %%
