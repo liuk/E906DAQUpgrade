@@ -49,7 +49,8 @@
 #define EOS                 0x1       //beam is off, trasnfer from SD to DP
 #define WAIT                0x2       //transfer back is done, wait for last IRQ
 #define READY               0x3       //transfer is done, ready for next spill
-#define ERR_OVERFLOW        0xf1      //this error happens when SDRAM overflow
+#define ES_SDOVERFLOW       0xf1      //this error happens when SDRAM overflow
+#define ES_INCOMPLETE       0xf2      //this error happens when off-beam transfer is incomplete
 
 /// Commands, upper 16-bits are fixed at 0xe906
 #define RESETCMD            0xe906000f   //This command triggers the hardware RESET
@@ -61,6 +62,12 @@
 /// Error codes
 #define EC_INCOMPLETE       0xe906ae01   //Off-beam transfer is somehown incomplete
 #define EC_SDOVERFLOW       0xe906ae02   //SD-RAM overflow --- too many words
+#define EC_UNKNOWNCMD_ON    0xe906be01   //other unknow state for command on beam transfer
+#define EC_UNKNOWNCMD_OFF   0xe906be02   //other unknow state for command off beam transfer
+#define EC_UNKNOWNCMD_BOS   0xe906be03   //other unknow state for command BOS
+#define EC_UNKNOWNCMD_EOS   0xe906be04   //other unknow state for command EOS
+#define EC_UNKNOWNCMD_LST   0xe906be05   //other unknow state for command LASTEVT
+#define EC_UNKNOWNCMD_OTR   0xe906be99   //other unknow state for other commands
 
 //------------------------------------------------------------------------------
 //         Local variables
@@ -98,10 +105,10 @@ const lPTR sdStartAddr  = (lPTR)0x20208000;   //this program is copied to 0x2020
 const lPTR sdEndAddr    = (lPTR)0x23f00000;   //u-boot is copied to 0x23f00000
 
 // Dual-port configuration/operation address
-const lPTR dpErrorAddr      = (lPTR)0x5001ffe8;   //register for run control parameters -- 0x7ffa
-const lPTR dpStateAddr      = (lPTR)0x5001ffec;   //register for run control parameters -- 0x7ffb
-const lPTR dpIRQRevAddr     = (lPTR)0x5001fff8;   //register to receive interrupt       -- 0x7ffe
-const lPTR dpIRQSndAddr     = (lPTR)0x5001fffe;   //register to send interrupt          -- 0x7fff
+const lPTR dpErrorAddr  = (lPTR)0x5001ffe8;   //register for run control parameters -- 0x7ffa
+const lPTR dpStateAddr  = (lPTR)0x5001ffec;   //register for run control parameters -- 0x7ffb
+const lPTR dpIRQRevAddr = (lPTR)0x5001fff8;   //register to receive interrupt       -- 0x7ffe
+const lPTR dpIRQSndAddr = (lPTR)0x5001fffe;   //register to send interrupt          -- 0x7fff
 
 // Address of first and last word of each DP bank
 lPTR dpBankStartAddr[NBANKS];    // the starting point of DP memory bank, where header is saved
@@ -177,8 +184,8 @@ void beamOnTransfer(void)
     //Protection against SDRAM overflow
     if(currentSDAddr > sdEndAddr)
     {
-        printf("- ERROR: SDRAM overflow!!!!\n\r");
-        state = ERR_OVERFLOW;
+        //printf("- ERROR: SDRAM overflow!!!!\n\r");
+        state = ES_SDOVERFLOW;
         *dpErrorAddr = EC_SDOVERFLOW;
         return;
     }
@@ -236,10 +243,11 @@ void beamOffTransfer(void)
     {
         *dpStartAddr = 0;
         state = WAIT;
+        *dpStateAddr = WAIT;
         return;
     }
 
-    //Write as much data as possible to the DP memory, save the last 6 words for configureation and first word for word count
+    //Write as much data as possible to the DP memory
     unsigned int nWords = blkSize;
     if(nWords > nWordsTotal) nWords = nWordsTotal;
 #if (BeamOffDBG > 0)
@@ -294,7 +302,7 @@ void beamOffTransfer(void)
 
 void CentralDispatch(void)
 {
-#if (CDPDebug > 0)
+#if (CDPDebug > 10)
     printf("Entering CentralDispatch function, state = %u\n\r", state);
 #endif
 
@@ -302,13 +310,13 @@ void CentralDispatch(void)
     unsigned int dp_isr = PIO_GetISR(&pinPC11);
     unsigned int dp_lev = PIO_Get(&pinPC11);
     volatile unsigned int cmd = *dpIRQRevAddr;
-#if (CDPDebug > 0)
+#if (CDPDebug > 10)
     printf("- Receive and Acknowledge the interrupt %08X, level = %08X \n\r", cmd, dp_lev);
 #endif
     if(dp_lev == 1) return; //only trigger on positive edge
     if(cmd == RESETCMD) myReset();
 
-    if((cmd & 0xffff0000) != 0xe9060000)
+    if((cmd & 0xffff0000) != 0xe9060000)   //normal event transfer, this is sent from FPGA
     {
         currentDPBankID = cmd & 0xf;
         if(state == BOS)
@@ -318,56 +326,123 @@ void CentralDispatch(void)
         else if(state == READY)
         {
             state = BOS;
+            *dpStateAddr = BOS;
             currentSDAddr = sdStartAddr;
             beamOnTransfer();
         }
+        else
+        {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_UNKNOWNCMD_ON;
+            printf("- ERROR: state 0x%x is not expected for a on-beam transfer command. \n\r", state);
+#endif
+            return;
+        }
     }
-    else if(cmd == TRANSFERCMD)
+    else if(cmd == TRANSFERCMD)    //flush event transfer, this is sent from VME
     {
-        //printf("- Received one flush, state = %u, nWordsTotal = %u\n\r", state, nWordsTotal);
-        if(state == EOS) beamOffTransfer();
+#if (CDPDebug > 9)
+        printf("- Received one flush, state = %u, nWordsTotal = %u\n\r", state, nWordsTotal);
+#endif
+        if(state == EOS)
+        {
+            beamOffTransfer();
+        }
+        else
+        {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_UNKNOWNCMD_OFF;
+            printf("- ERROR: state 0x%x is not expected for a off-beam transfer command. \n\r", state);
+#endif
+            return;
+        }
     }
     else if(cmd == BOSCMD)
     {
-        printf("- INFO: Received BOS, transits to beam on state \n\r");
-        if(state != READY)
+        if(state == EOS || state == WAIT)
         {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_INCOMPLETE;
             printf("- ERROR: Off beam transfer not completed for previous spill, force state from 0x%x to READY \n\r", state);
+#endif
+
             init();
             state = READY;
+            *dpStateAddr = READY;
+        }
+        else if(state == READY)
+        {
+            //printf("- INFO: Received BOS, transits to beam on state \n\r");
+            return;
+        }
+        else
+        {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_UNKNOWNCMD_BOS;
+            printf("- ERROR: state 0x%x is not expected for a BOS command. \n\r", state);
+#endif
+            return;
         }
     }
     else if(cmd == EOSCMD)
     {
-        printf("- INFO: Received EOS, transits to beam off state, will transfer %u words \n\r", nWordsTotal);
-        if(state == BOS || state == ERR_OVERFLOW)
+        if(state == BOS || state == ES_SDOVERFLOW)
         {
+            //printf("- INFO: Received EOS, transits to beam off state, will transfer %u words \n\r", nWordsTotal);
             state = EOS;
+            *dpStateAddr = EOS;
             currentSDAddr = sdStartAddr;
             beamOffTransfer();
+        }
+        else
+        {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_UNKNOWNCMD_EOS;
+            printf("- ERROR: state 0x%x is not expected for a EOS command. \n\r", state);
+#endif
+            return;
         }
     }
     else if(cmd == LASTEVTCMD)
     {
-        printf("- INFO: Received last flush, change back to READY, %d words left \n\r", nWordsTotal);
         if(nWordsTotal != 0)
         {
+#if (CDPDebug > 0)
             *dpErrorAddr = EC_INCOMPLETE;
             printf("- ERROR: off-beam transfer is not complete! \n\r");
+#endif
         }
 
         //move to READY
-        init();
-        state = READY;
+        if(state == EOS)
+        {
+            //printf("- INFO: Received last flush, change back to READY, %d words left \n\r", nWordsTotal);
+
+            init();
+            state = READY;
+            *dpStateAddr = READY;
+        }
+        else
+        {
+#if (CDPDebug > 0)
+            *dpErrorAddr = EC_UNKNOWNCMD_LST;
+            printf("- ERROR: state 0x%x is not expected for a LASTEVT command. \n\r", state);
+#endif
+            return;
+        }
     }
     else if((cmd & 0xe9068000) == 0xe9068000)
     {
         blkSize = cmd & 0x7fff;
-        printf("- INFO: Set the flush event block size to %d\n\r", blkSize);
+        //printf("- INFO: Set the flush event block size to %d\n\r", blkSize);
     }
     else
     {
+#if (CDPDebug > 0)
+        *dpErrorAddr = EC_UNKNOWNCMD_OTR;
         printf("- ERROR: No condition satisfied, cmd = 0x%08x, state = 0x%1x !!!!!\n\r", cmd, state);
+#endif
+        return;
     }
 }
 
